@@ -1,23 +1,17 @@
 # Todo API
 
-An asynchronous FastAPI service demonstrating production-oriented authentication with PostgreSQL:
+An asynchronous FastAPI and PostgreSQL service featuring:
 
-* short-lived, stateless JWT access tokens;
-* rotating and independently revocable refresh-token sessions;
-* sliding refresh-token expiration with a fixed absolute session lifetime;
-* refresh-token replay detection;
-* Argon2 password hashing;
-* hashed API keys for machine access;
-* Alembic migrations;
-* Prometheus metrics.
+* stateless, short-lived JWT access tokens;
+* rotating refresh-token sessions with replay detection;
+* sliding refresh expiration and a fixed session lifetime;
+* Argon2 password hashing and hashed API keys;
+* owner-scoped Todo CRUD, filtering, sorting, and pagination;
+* Alembic migrations and Prometheus metrics.
 
 ## Run locally
 
-Requirements:
-
-* Python 3.11+
-* [uv](https://docs.astral.sh/uv/)
-* PostgreSQL
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and PostgreSQL.
 
 ```bash
 uv sync --group dev
@@ -26,43 +20,21 @@ uv run alembic upgrade head
 uv run todo-api
 ```
 
-OpenAPI documentation is available at:
+* OpenAPI: `http://localhost:8000/docs`
+* Metrics: `http://localhost:8000/metrics`
+
+## Authentication
+
+Register and log in through:
 
 ```text
-http://localhost:8000/docs
+POST /api/v1/auth/register
+POST /api/v1/auth/login
 ```
 
-Prometheus metrics are exposed at:
+Login uses an OAuth2 password form where `username` contains the user's email.
 
-```text
-/metrics
-```
-
-## Authentication flow
-
-Register a user, then submit the email through OAuth2's `username` form field:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "email": "user@example.com",
-    "password": "strong-pass-123",
-    "full_name": "Example User"
-  }'
-```
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'username=user@example.com&password=strong-pass-123'
-```
-
-Every successful login creates a new independent login session. Existing sessions for the
-same user are not replaced or revoked, allowing the account to remain signed in on multiple
-devices or browsers.
-
-A successful login returns an access token and a refresh token:
+A successful login creates an independent session and returns:
 
 ```json
 {
@@ -73,95 +45,58 @@ A successful login returns an access token and a refresh token:
 }
 ```
 
-Use the access token for protected user operations:
+Use the access token for protected endpoints:
 
 ```http
 Authorization: Bearer <access-token>
 ```
 
-For example:
-
-```bash
-curl http://localhost:8000/api/v1/users/me \
-  -H 'Authorization: Bearer <access-token>'
-```
-
-When the access token expires, send the latest refresh token to:
+Rotate or revoke a session by sending its latest refresh token:
 
 ```text
 POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
 ```
 
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/refresh \
-  -H 'Content-Type: application/json' \
-  -d '{"refresh_token":"<refresh-token>"}'
+Refresh rotation replaces both tokens. Reusing an old token outside the configured grace period revokes that session.
+
+Access tokens remain valid until expiration because bearer authentication does not query the refresh-session table on every request.
+
+API keys are managed through `/api/v1/api-keys` and used through:
+
+```http
+X-API-Key: <api-key>
 ```
 
-A successful refresh rotates the token pair. Replace both locally stored tokens with the
-new values returned by the API.
+Prefer headers over query-string credentials because URLs may be logged or cached.
 
-Send the latest refresh token to the logout endpoint to revoke that login session:
+## Todos
 
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/logout \
-  -H 'Content-Type: application/json' \
-  -d '{"refresh_token":"<refresh-token>"}'
-```
-
-Refresh-session revocation prevents the session from issuing additional token pairs.
-Already-issued access tokens remain valid until their own expiration because bearer
-authentication does not perform a refresh-session database lookup on every request.
-
-This is an intentional tradeoff that preserves the stateless advantages of short-lived JWT
-access tokens. The maximum remaining authorization window after logout or refresh-token
-replay is therefore bounded by the access-token lifetime.
-
-Bearer-authenticated users can manage API keys through:
+Bearer-authenticated users can manage their own Todos:
 
 ```text
-/api/v1/api-keys
+POST   /api/v1/todos
+GET    /api/v1/todos
+GET    /api/v1/todos/{todo_id}
+PATCH  /api/v1/todos/{todo_id}
+DELETE /api/v1/todos/{todo_id}
 ```
 
-API keys authenticate machine clients through the `X-API-Key` header. For example:
+Todo lists support search, status, priority, archive and due-date filters, sorting, limit, and offset.
 
-```text
-GET /api/v1/users/me/api-key
-```
-
-Prefer the `X-API-Key` header over query-string API keys because URLs may be retained in
-logs, caches, analytics systems, proxies, and browser history.
-
-## Token lifetimes
-
-The authentication system uses three related lifetime settings:
-
-* `access_token_expire_minutes`: normal access-token lifetime;
-* `refresh_token_expire_days`: sliding refresh-token inactivity lifetime;
-* `refresh_session_absolute_ttl`: maximum total lifetime of a login session.
-
-Token lifetimes are bounded by the fixed absolute session deadline. Near the end of a
-session, newly issued access and refresh tokens may therefore have shorter lifetimes than
-their normal configured values.
-
-Refresh-token rotation never extends the session beyond its original absolute expiration.
+All queries are scoped to the authenticated user. Missing or foreign Todo IDs return `404`.
 
 ## Development
 
-Run the test suite:
-
 ```bash
 uv run pytest
-```
-
-Check formatting:
-
-```bash
 uv run black --check src tests scripts alembic
+uv run ruff check .
+uv run mypy src
 ```
 
 See:
 
-* [API notes](docs/api.md)
+* [API](docs/api.md)
 * [Architecture](docs/architecture.md)
-* [Database design](docs/database.md)
+* [Database](docs/database.md)

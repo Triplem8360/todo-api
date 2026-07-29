@@ -18,6 +18,11 @@ All paths below use the `/api/v1` prefix.
 | GET    | `/users/me/api-key`       | `X-API-Key` header        | Validate a header API key           |
 | GET    | `/users/me/basic`         | HTTP Basic                | Validate email/password credentials |
 | GET    | `/users/me/query-api-key` | `api_key` query parameter | Legacy API-key compatibility        |
+| POST   | `/todos`                  | Bearer access token       | Create a Todo                       |
+| GET    | `/todos`                  | Bearer access token       | List owned Todos                    |
+| GET    | `/todos/{todo_id}`        | Bearer access token       | Read an owned Todo                  |
+| PATCH  | `/todos/{todo_id}`        | Bearer access token       | Update an owned Todo                |
+| DELETE | `/todos/{todo_id}`        | Bearer access token       | Delete an owned Todo                |
 
 ## Access and refresh tokens
 
@@ -134,8 +139,8 @@ refresh-token lifetime =
 For example, with:
 
 ```text
-access-token lifetime:    15 minutes
-refresh-token lifetime:   30 days
+access-token lifetime:     15 minutes
+refresh-token lifetime:    30 days
 absolute session lifetime: 90 days
 ```
 
@@ -312,6 +317,130 @@ Clients should:
 * clear authentication state after an invalid, expired, or revoked refresh session;
 * never send refresh tokens as ordinary bearer credentials.
 
+## Todos
+
+Todo endpoints require a bearer access token:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+All operations are scoped to the authenticated user. A missing Todo or a Todo owned by
+another user returns `404 Not Found`.
+
+### Create
+
+```http
+POST /api/v1/todos
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Finish documentation",
+  "description": "Document the Todo endpoints",
+  "priority": "high",
+  "due_at": "2026-08-01T12:00:00Z"
+}
+```
+
+A successful request returns `201 Created` with the created Todo.
+
+### List
+
+```http
+GET /api/v1/todos
+```
+
+Supported query parameters:
+
+* `q`;
+* `status`;
+* `priority`;
+* `is_archived`;
+* `due_from` and `due_to`;
+* `sort_by`;
+* `sort_direction`;
+* `limit` and `offset`.
+
+Supported sort fields are `created_at`, `updated_at`, `due_at`, and `title`.
+Sort direction may be `asc` or `desc`.
+
+Example:
+
+```http
+GET /api/v1/todos?status=pending&priority=high&sort_by=due_at&sort_direction=asc
+```
+
+The response contains:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### Read
+
+```http
+GET /api/v1/todos/{todo_id}
+```
+
+The Todo ID must be a positive integer.
+
+### Update
+
+```http
+PATCH /api/v1/todos/{todo_id}
+Content-Type: application/json
+```
+
+```json
+{
+  "status": "completed",
+  "priority": "medium",
+  "is_archived": false
+}
+```
+
+Only provided fields are updated. Supported fields are:
+
+* `title`;
+* `description`;
+* `status`;
+* `priority`;
+* `due_at`;
+* `is_archived`.
+
+The service manages `completed_at` according to the Todo status.
+
+### Delete
+
+```http
+DELETE /api/v1/todos/{todo_id}
+```
+
+A successful deletion returns `204 No Content`.
+
+### Todo errors
+
+Todo operations may return:
+
+| Status | Meaning                         |
+| ------ | ------------------------------- |
+| `401`  | Invalid or missing access token |
+| `403`  | Inactive authenticated user     |
+| `404`  | Todo not found                  |
+| `409`  | Invalid Todo state change       |
+| `422`  | Request validation failed       |
+| `503`  | Todo service temporarily failed |
+
+Create, update, and delete operations are committed atomically. Database errors are rolled
+back and converted into stable application errors.
+
 ## Other authentication methods
 
 Bearer access tokens are the primary user-authentication mechanism.
@@ -338,3 +467,12 @@ Application errors use a stable response shape:
   "code": "machine_readable_code"
 }
 ```
+
+### Common authentication responses
+
+| Status | Meaning                                        |
+| ------ | ---------------------------------------------- |
+| `401`  | Missing, invalid, or expired credentials       |
+| `403`  | The authenticated user is inactive             |
+| `409`  | Authentication state conflict                  |
+| `503`  | Authentication service temporarily unavailable |
