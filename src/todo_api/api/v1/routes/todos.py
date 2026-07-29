@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Path, Query, Response, status
 
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/todos", tags=["Todos"])
 TodoId = Annotated[int, Path(gt=0)]
 TodoQuery = Annotated[TodoListQuerySchema, Query()]
 
-_AUTH_RESPONSES = {
+_AUTH_RESPONSES: dict[int | str, dict[str, Any]] = {
     status.HTTP_401_UNAUTHORIZED: error_response(
         InvalidAccessTokenError,
         description="Access token is invalid.",
