@@ -42,7 +42,10 @@ from todo_api.models.user import User
 from todo_api.observability.metrics import record_auth_attempt
 from todo_api.repositories.api_key import get_active_api_key_by_hash
 from todo_api.repositories.user import get_user_by_email, get_user_by_id
+from todo_api.services.api_key import APIKeyService
+from todo_api.services.auth import AuthService
 from todo_api.services.todo import TodoService
+from todo_api.services.user import UserService
 from todo_api.utils.email import normalize_email
 
 ACCESS_TOKEN_AUTH = "access_token"
@@ -232,8 +235,20 @@ async def get_current_query_api_key_user(
     return await _authenticate_api_key(api_key, session, QUERY_API_KEY_AUTH)
 
 
+def get_api_key_service(session: DbSession) -> APIKeyService:
+    return APIKeyService(session=session)
+
+
+def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:
+    return AuthService(session=session, settings=settings)
+   
+
 def get_todo_service(session: DbSession) -> TodoService:
     return TodoService(session=session)
+
+
+def get_user_service(session: DbSession) -> UserService:
+    return UserService(session=session)
 
 
 # Route-facing dependencies.
@@ -242,4 +257,7 @@ CurrentBearerUser = Annotated[User, Depends(get_current_bearer_user)]
 CurrentBasicUser = Annotated[User, Depends(get_current_basic_user)]
 CurrentHeaderAPIKeyUser = Annotated[User, Depends(get_current_header_api_key_user)]
 CurrentQueryAPIKeyUser = Annotated[User, Depends(get_current_query_api_key_user)]
+APIKeyServiceDep = Annotated[APIKeyService, Depends(get_api_key_service)]
+AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 TodoServiceDep = Annotated[TodoService, Depends(get_todo_service)]
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]

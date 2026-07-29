@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from todo_api.api.deps import AppSettings, DbSession
+from todo_api.api.deps import AuthServiceDep
 from todo_api.api.responses import error_response
 from todo_api.exceptions.auth import (
     AuthServiceError,
@@ -22,13 +22,6 @@ from todo_api.models.user import User
 from todo_api.observability.metrics import record_auth_attempt, record_registration
 from todo_api.schemas.token import RefreshTokenRequestSchema, TokenResponseSchema
 from todo_api.schemas.user import UserCreateSchema, UserResponseSchema
-from todo_api.services.auth import (
-    authenticate_user,
-    create_login_session,
-    refresh_login_session,
-    register_user,
-    revoke_refresh_session,
-)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -55,8 +48,11 @@ def _authentication_failure_outcome(error: AuthServiceError) -> str:
         ),
     },
 )
-async def register(payload: UserCreateSchema, session: DbSession) -> User:
-    user = await register_user(session, payload)
+async def register(
+    payload: UserCreateSchema,
+    service: AuthServiceDep,
+) -> User:
+    user = await service.register(payload)
     record_registration("success")
     return user
 
@@ -81,13 +77,12 @@ async def register(payload: UserCreateSchema, session: DbSession) -> User:
     },
 )
 async def login(
-    settings: AppSettings,
+    service: AuthServiceDep,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
-    session: DbSession,
 ) -> TokenResponseSchema:
     try:
-        user = await authenticate_user(session, form.username, form.password)
-        tokens = await create_login_session(session, user, settings)
+        user = await service.authenticate(form.username, form.password)
+        tokens = await service.create_login_session(user)
     except AuthServiceError as exc:
         record_auth_attempt("password", _authentication_failure_outcome(exc))
         raise
@@ -110,18 +105,16 @@ async def login(
             description="Account is inactive.",
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
-            TokenRefreshUnavailableError, 
-            description="Token refresh is unavailable."
+            TokenRefreshUnavailableError, description="Token refresh is unavailable."
         ),
     },
 )
 async def refresh(
-    settings: AppSettings,
     payload: RefreshTokenRequestSchema,
-    session: DbSession,
+    service: AuthServiceDep,
 ) -> TokenResponseSchema:
     try:
-        tokens = await refresh_login_session(session, payload.refresh_token, settings)
+        tokens = await service.refresh_login_session(payload.refresh_token)
     except AuthServiceError as exc:
         record_auth_attempt("refresh", _authentication_failure_outcome(exc))
         raise
@@ -141,9 +134,8 @@ async def refresh(
     },
 )
 async def logout(
-    settings: AppSettings,
     payload: RefreshTokenRequestSchema,
-    session: DbSession,
+    service: AuthServiceDep,
 ) -> Response:
-    await revoke_refresh_session(session, payload.refresh_token, settings)
+    await service.revoke_refresh_session(payload.refresh_token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

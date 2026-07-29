@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,32 +13,37 @@ from todo_api.models.user import User
 from todo_api.schemas.user import UserProfileUpdateSchema
 
 
-async def update_user_profile(
-    session: AsyncSession,
-    user: User,
-    payload: UserProfileUpdateSchema,
-) -> User:
-    """Update the editable fields on the current user's profile."""
+@dataclass(slots=True)
+class UserService:
+    session: AsyncSession
 
-    user.full_name = payload.full_name
-    try:
-        await session.flush()
-        await session.refresh(user)
-        await session.commit()
-    except SQLAlchemyError as exc:
-        raise ProfileUpdateUnavailableError() from exc
+    async def update_profile(
+        self,
+        user: User,
+        payload: UserProfileUpdateSchema,
+    ) -> User:
+        """Update the editable fields on the current user's profile."""
 
-    return user
+        user.full_name = payload.full_name
 
+        try:
+            await self.session.flush()
+            await self.session.refresh(user)
+            await self.session.commit()
+        except SQLAlchemyError as exc:
+            raise ProfileUpdateUnavailableError() from exc
 
-async def deactivate_user_account(session: AsyncSession, user: User) -> None:
-    """Deactivate the current account, invalidating all of its credentials."""
+        return user
 
-    if not user.is_active:
-        return
+    async def deactivate_account(self, user: User) -> None:
+        """Deactivate the current account and invalidate its credentials."""
 
-    user.is_active = False
-    try:
-        await session.commit()
-    except SQLAlchemyError as exc:
-        raise AccountDeactivationUnavailableError() from exc
+        if not user.is_active:
+            return
+
+        user.is_active = False
+
+        try:
+            await self.session.commit()
+        except SQLAlchemyError as exc:
+            raise AccountDeactivationUnavailableError() from exc

@@ -7,7 +7,7 @@ from todo_api.api.deps import (
     CurrentHeaderAPIKeyUser,
     CurrentQueryAPIKeyUser,
     CurrentUser,
-    DbSession,
+    UserServiceDep,
 )
 from todo_api.api.responses import error_response
 from todo_api.exceptions.user import (
@@ -16,7 +16,6 @@ from todo_api.exceptions.user import (
 )
 from todo_api.models.user import User
 from todo_api.schemas.user import UserProfileUpdateSchema, UserResponseSchema
-from todo_api.services.user import deactivate_user_account, update_user_profile
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -45,10 +44,10 @@ async def get_current_user(current_user: CurrentUser) -> User:
 )
 async def update_current_user(
     payload: UserProfileUpdateSchema,
+    service: UserServiceDep,
     current_user: CurrentUser,
-    session: DbSession,
 ) -> User:
-    return await update_user_profile(session, current_user, payload)
+    return await service.update_profile(current_user, payload)
 
 
 @router.delete(
@@ -63,10 +62,10 @@ async def update_current_user(
     },
 )
 async def deactivate_current_user(
+    service: UserServiceDep,
     current_user: CurrentUser,
-    session: DbSession,
 ) -> Response:
-    await deactivate_user_account(session, current_user)
+    await service.deactivate_account(current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

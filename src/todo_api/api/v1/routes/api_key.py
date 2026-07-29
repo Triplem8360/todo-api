@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Response, status
 
-from todo_api.api.deps import CurrentUser, DbSession
+from todo_api.api.deps import APIKeyServiceDep, CurrentUser
 from todo_api.api.responses import error_response
 from todo_api.exceptions.api_key import (
     APIKeyCreationUnavailableError,
@@ -18,7 +18,6 @@ from todo_api.schemas.api_key import (
     APIKeyCreateSchema,
     APIKeyResponseSchema,
 )
-from todo_api.services.api_key import issue_api_key, list_api_keys, revoke_api_key
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 
@@ -30,21 +29,16 @@ router = APIRouter(prefix="/api-keys", tags=["API Keys"])
     description="Returns the plaintext API key once; only its hash is stored.",
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
-            APIKeyCreationUnavailableError, 
-            description="API key creation is unavailable."
+            APIKeyCreationUnavailableError, description="API key creation is unavailable."
         )
     },
 )
 async def create_api_key(
     payload: APIKeyCreateSchema,
+    service: APIKeyServiceDep,
     current_user: CurrentUser,
-    session: DbSession,
 ) -> APIKeyCreatedResponseSchema:
-    return await issue_api_key(
-        session,
-        user_id=current_user.id,
-        name=payload.name,
-    )
+    return await service.issue(user_id=current_user.id, name=payload.name)
 
 
 @router.get(
@@ -58,15 +52,11 @@ async def create_api_key(
     },
 )
 async def get_api_keys(
+    service: APIKeyServiceDep,
     current_user: CurrentUser,
-    session: DbSession,
     include_revoked: Annotated[bool, Query()] = False,
 ) -> list[APIKey]:
-    return await list_api_keys(
-        session,
-        user_id=current_user.id,
-        include_revoked=include_revoked,
-    )
+    return await service.list(user_id=current_user.id, include_revoked=include_revoked)
 
 
 @router.delete(
@@ -83,13 +73,9 @@ async def get_api_keys(
     },
 )
 async def delete_api_key(
-    api_key_id: Annotated[int, Path(gt=0)],
+    service: APIKeyServiceDep,
     current_user: CurrentUser,
-    session: DbSession,
+    api_key_id: Annotated[int, Path(gt=0)],
 ) -> Response:
-    await revoke_api_key(
-        session,
-        user_id=current_user.id,
-        api_key_id=api_key_id,
-    )
+    await service.revoke(user_id=current_user.id, api_key_id=api_key_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
