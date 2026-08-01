@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -96,11 +97,30 @@ class Settings(BaseSettings):
     refresh_session_absolute_ttl: timedelta = Field(
         default=timedelta(days=90),
         gt=timedelta(0),
+        validation_alias="REFRESH_SESSION_ABSOLUTE_TTL",
     )
-
     refresh_token_reuse_grace: timedelta = Field(
         default=timedelta(seconds=5),
         ge=timedelta(0),
+        validation_alias="REFRESH_TOKEN_REUSE_GRACE",
+    )
+
+    oauth2_public_client_id: str = Field(
+        default="todo-public-client",
+        min_length=1,
+        max_length=128,
+        validation_alias="OAUTH2_PUBLIC_CLIENT_ID",
+    )
+    oauth2_redirect_uris: tuple[str, ...] = Field(
+        default=("http://localhost:8000/docs/oauth2-redirect",),
+        min_length=1,
+        validation_alias="OAUTH2_REDIRECT_URIS",
+    )
+    oauth2_authorization_code_ttl_seconds: int = Field(
+        default=120,
+        ge=30,
+        le=600,
+        validation_alias="OAUTH2_AUTHORIZATION_CODE_TTL_SECONDS",
     )
 
     metrics_path: str = Field(default="/metrics", validation_alias="METRICS_PATH")
@@ -121,6 +141,33 @@ class Settings(BaseSettings):
         if not value.startswith("/") or value == "/":
             raise ValueError("METRICS_PATH must start with '/' and cannot be '/'.")
         return value.rstrip("/")
+
+    @field_validator("oauth2_redirect_uris")
+    @classmethod
+    def validate_oauth2_redirect_uris(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        validated = []
+        seen = set()
+
+        for raw_uri in values:
+            uri = raw_uri.strip()
+            parsed = urlsplit(uri)
+
+            if not parsed.scheme:
+                raise ValueError("Each OAuth redirect URI must be an absolute URI.")
+
+            if parsed.scheme in {"http", "https"} and not parsed.netloc:
+                raise ValueError("HTTP OAuth redirect URIs must include a host.")
+
+            if "#" in uri:
+                raise ValueError("OAuth redirect URIs must not contain fragments.")
+
+            if uri in seen:
+                raise ValueError(f"Duplicate OAuth redirect URI configured: {uri}")
+
+            seen.add(uri)
+            validated.append(uri)
+
+        return tuple(validated)
 
     @model_validator(mode="after")
     def validate_signing_secret(self) -> Settings:

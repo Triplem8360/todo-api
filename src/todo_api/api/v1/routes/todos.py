@@ -4,7 +4,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Path, Query, Response, status
 
-from todo_api.api.deps import CurrentBearerUser, TodoServiceDep
+from todo_api.api.deps import (
+    CurrentAuthorizationCodeUser,
+    CurrentBearerUser,
+    TodoServiceDep,
+)
 from todo_api.api.responses import error_response
 from todo_api.exceptions.auth import (
     InactiveUserError,
@@ -75,7 +79,7 @@ async def create_todo(
 async def list_todos(
     query: TodoQuery,
     service: TodoServiceDep,
-    current_user: CurrentBearerUser,
+    current_user: CurrentAuthorizationCodeUser,
 ) -> TodoListResponseSchema:
     return await service.list(current_user.id, query)
 

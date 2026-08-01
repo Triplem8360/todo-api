@@ -41,6 +41,12 @@ def create_app(
         debug=settings.app_debug,
         version=__version__,
         lifespan=lifespan,
+        swagger_ui_init_oauth={
+            "clientId": settings.oauth2_public_client_id,
+            "appName": "Todo API Swagger UI",
+            "usePkceWithAuthorizationCodeGrant": True,
+            "useBasicAuthenticationWithAccessCodeGrant": False,
+        },
     )
     app.state.settings = settings
     app.state.database = db

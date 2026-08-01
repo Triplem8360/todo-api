@@ -10,6 +10,7 @@ from todo_api.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from todo_api.models.api_key import APIKey
+    from todo_api.models.oauth_authorization_code import OAuthAuthorizationCode
     from todo_api.models.refresh_session import RefreshSession
     from todo_api.models.todo import Todo
 
@@ -48,8 +49,15 @@ class User(TimestampMixin, Base):
         passive_deletes=True,
         lazy="raise",
     )
-    
+
     todos: Mapped[list[Todo]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="raise",
+    )
+
+    oauth_authorization_codes: Mapped[list[OAuthAuthorizationCode]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,

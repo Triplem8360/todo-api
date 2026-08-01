@@ -7,6 +7,9 @@ All paths below use the `/api/v1` prefix.
 | GET    | `/health`                 | None                      | Liveness check                      |
 | POST   | `/auth/register`          | None                      | Register a user                     |
 | POST   | `/auth/login`             | OAuth2 password form      | Create an independent login session |
+| GET    | `/auth/authorize`         | None                      | Display the authorization login     |
+| POST   | `/auth/authorize`         | Email and password form   | Issue an authorization code         |
+| POST   | `/auth/token`             | Authorization code + PKCE | Exchange a code for tokens          |
 | POST   | `/auth/refresh`           | Refresh token in JSON     | Rotate the session token pair       |
 | POST   | `/auth/logout`            | Refresh token in JSON     | Revoke a login session              |
 | POST   | `/api-keys`               | Bearer access token       | Create an API key                   |
@@ -23,6 +26,162 @@ All paths below use the `/api/v1` prefix.
 | GET    | `/todos/{todo_id}`        | Bearer access token       | Read an owned Todo                  |
 | PATCH  | `/todos/{todo_id}`        | Bearer access token       | Update an owned Todo                |
 | DELETE | `/todos/{todo_id}`        | Bearer access token       | Delete an owned Todo                |
+
+## Authorization Code + PKCE
+
+The primary interactive login uses the OAuth 2.0 Authorization Code flow with mandatory
+PKCE/S256. It supports one configured first-party public client. The client has a public
+`client_id` and no client secret.
+
+OAuth remains an authorization protocol even though this first-party flow authenticates the
+resource owner with email and password at the authorization endpoint. The resulting access
+token identifies the authenticated user through its `sub` claim; protected endpoints then
+apply user and resource-ownership rules.
+
+### Protocol roles
+
+The flow has three logical roles in this application:
+
+* the client: Swagger UI or another browser, mobile, or native application;
+* the authorization server: `/auth/authorize` and `/auth/token`;
+* the resource server: protected API endpoints such as `/todos`.
+
+The authorization and resource servers are implemented by the same FastAPI application, but
+their protocol responsibilities remain separate.
+
+### Authorization request
+
+The client creates a fresh, high-entropy `code_verifier` containing 43–128 permitted characters
+for every authorization attempt. It retains the verifier locally and derives the S256
+challenge:
+
+```text
+code_challenge = BASE64URL(SHA256(ASCII(code_verifier))) without padding
+```
+
+The verifier is not sent to the authorization endpoint. The derived 43-character challenge is
+sent instead:
+
+```http
+GET /api/v1/auth/authorize
+    ?response_type=code
+    &client_id=todo-public-client
+    &redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fdocs%2Foauth2-redirect
+    &state=<client-state>
+    &code_challenge=<s256-challenge>
+    &code_challenge_method=S256
+```
+
+The API requires:
+
+* `response_type=code`;
+* the configured `client_id`;
+* an exact registered `redirect_uri`;
+* a valid S256 `code_challenge`;
+* `code_challenge_method=S256`;
+* an empty `scope` under the current no-scope policy.
+
+`GET /auth/authorize` validates these protocol parameters and displays the sign-in form.
+`POST /auth/authorize` validates them again, authenticates the user, persists a hashed
+short-lived code, and returns a redirect:
+
+```http
+HTTP/1.1 303 See Other
+Location: http://localhost:8000/docs/oauth2-redirect?code=<authorization-code>&state=<client-state>
+Cache-Control: no-store
+```
+
+The authorization code is bound to the authenticated user, client ID, exact redirect URI,
+S256 challenge, and expiration time. The plaintext code is returned only to the client; only
+its SHA-256 hash is persisted.
+
+### Token exchange
+
+After receiving the redirect, the client sends the original verifier and one-time code:
+
+```http
+POST /api/v1/auth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code
+&client_id=todo-public-client
+&code=<authorization-code>
+&redirect_uri=http://localhost:8000/docs/oauth2-redirect
+&code_verifier=<original-verifier>
+```
+
+The token endpoint hashes the presented verifier with S256 and atomically consumes a record
+matching all of the following:
+
+* authorization-code hash;
+* `client_id`;
+* exact `redirect_uri`;
+* calculated `code_challenge`;
+* unexpired lifetime;
+* `consumed_at IS NULL`.
+
+Successful exchange records `consumed_at` and creates the refresh session in one transaction.
+The retained authorization-code row cannot be exchanged again. Any mismatch, expiration, or
+replay returns `invalid_grant` without identifying which check failed.
+
+The client is public. It sends `client_id` as a form field and does not send a client secret or
+HTTP Basic client credentials. The token endpoint rejects an `Authorization` header.
+
+### Swagger UI client
+
+Swagger UI is preconfigured as the development OAuth client. When PKCE is enabled in the
+Swagger initialization, it performs the client-side protocol work automatically:
+
+1. generates and temporarily retains a fresh `code_verifier`;
+2. derives the S256 `code_challenge`;
+3. generates `state` and opens the authorization endpoint;
+4. receives `code` and `state` at `/docs/oauth2-redirect`;
+5. validates the returned state;
+6. exchanges the code and verifier at the token endpoint;
+7. sends the access token as `Authorization: Bearer` for authorized operations.
+
+The API, not Swagger UI, authenticates the user, issues and persists authorization codes,
+verifies PKCE, creates refresh sessions, and signs tokens. Swagger UI does not automatically
+rotate the refresh token through `/auth/refresh`.
+
+The callback URI must exactly match both the URI used by Swagger UI and one entry in
+`OAUTH2_REDIRECT_URIS`. Different hosts are different redirect URIs, even when they resolve to
+the same machine:
+
+```text
+http://localhost:8000/docs/oauth2-redirect
+http://127.0.0.1:8000/docs/oauth2-redirect
+```
+
+### State
+
+`state` correlates the authorization response with the client request that initiated it. It is
+separate from PKCE: state protects the client-side authorization transaction, while PKCE
+prevents a party that intercepts the authorization code from redeeming it without the verifier.
+
+The parameter is optional at the API schema boundary. When present, the API returns it
+unchanged in both successful and protocol-error redirects. The API neither persists nor
+validates it; the client must bind it to the local authorization attempt and reject a callback
+with a missing or different value. Production clients should use an opaque, single-use,
+session-bound value and must not place secrets or personal data in it.
+
+### Scope policy
+
+OAuth scopes are not implemented yet. The authorization endpoint accepts an omitted or empty
+`scope` and rejects every non-empty value with `invalid_scope`. Access tokens therefore contain
+no OAuth scope claim, and refresh sessions do not persist scopes.
+
+Current endpoint authorization is based on:
+
+* successful access-token authentication and its `sub` user identifier;
+* active-user validation;
+* resource ownership, such as `todo.user_id == current_user.id`;
+* route-specific authentication mechanisms where applicable.
+
+When scopes are introduced, the authorized scope set must be validated at `/authorize`, bound
+to the authorization-code record, copied into the access token and refresh session, preserved
+or narrowed during refresh, and enforced by route dependencies. A refresh operation must never
+increase the previously authorized scope set.
 
 ## Access and refresh tokens
 
@@ -465,6 +624,16 @@ Application errors use a stable response shape:
 {
   "detail": "Human-readable message.",
   "code": "machine_readable_code"
+}
+```
+
+OAuth authorization and token errors use the protocol response shape and include no-store
+headers:
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "The authorization code or PKCE verifier is invalid."
 }
 ```
 

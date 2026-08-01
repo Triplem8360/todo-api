@@ -12,6 +12,7 @@ def test_openapi_exposes_compact_authentication_surface(settings: Settings) -> N
         "/api/v1/auth/login",
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
+        "/api/v1/auth/token",
         "/api/v1/api-keys",
         "/api/v1/users/me",
         "/api/v1/users/me/api-key",
@@ -24,5 +25,13 @@ def test_openapi_exposes_compact_authentication_surface(settings: Settings) -> N
         "APIKeyHeaderAuth",
         "APIKeyQueryAuth",
         "BasicAuth",
+        "HTTPBearer",
+        "OAuth2AuthorizationCodeBearer",
         "OAuth2PasswordBearer",
     }
+
+    oauth_flow = schema["components"]["securitySchemes"]["OAuth2AuthorizationCodeBearer"]["flows"][
+        "authorizationCode"
+    ]
+    assert oauth_flow["authorizationUrl"] == "/api/v1/auth/authorize"
+    assert oauth_flow["tokenUrl"] == "/api/v1/auth/token"

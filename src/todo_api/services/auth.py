@@ -118,10 +118,17 @@ class AuthService:
 
         return user
 
-    async def create_login_session(self, user: User) -> TokenResponseSchema:
-        """Create an independent login session for the user."""
+    def stage_login_session(
+        self, user: User, *, issued_at: datetime | None = None
+    ) -> TokenResponseSchema:
+        """Create tokens and stage their refresh session without committing.
 
-        now = datetime.now(UTC)
+        The caller owns the transaction and must commit it. This allows
+        authorization-code consumption and refresh-session creation to be
+        persisted atomically.
+        """
+
+        now = issued_at or datetime.now(UTC)
         session_id = generate_token_id()
         absolute_expires_at = now + self.settings.refresh_session_absolute_ttl
 
@@ -135,19 +142,26 @@ class AuthService:
 
         refresh_payload = decode_refresh_token(tokens.refresh_token, self.settings)
 
-        try:
-            self.session.add(
-                RefreshSession(
-                    id=session_id,
-                    user_id=user.id,
-                    token_hash=hash_secret(tokens.refresh_token),
-                    previous_token_hash=None,
-                    expires_at=refresh_payload.exp,
-                    absolute_expires_at=absolute_expires_at,
-                    last_used_at=now,
-                    rotated_at=None,
-                )
+        self.session.add(
+            RefreshSession(
+                id=session_id,
+                user_id=user.id,
+                token_hash=hash_secret(tokens.refresh_token),
+                previous_token_hash=None,
+                expires_at=refresh_payload.exp,
+                absolute_expires_at=absolute_expires_at,
+                last_used_at=now,
+                rotated_at=None,
             )
+        )
+
+        return tokens
+
+    async def create_login_session(self, user: User) -> TokenResponseSchema:
+        """Create and commit an independent login session."""
+
+        try:
+            tokens = self.stage_login_session(user)
             await self.session.commit()
         except SQLAlchemyError as exc:
             raise LoginSessionUnavailableError() from exc

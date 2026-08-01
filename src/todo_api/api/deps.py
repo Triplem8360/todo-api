@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, TypeAlias
 
 from anyio import to_thread
 from fastapi import Depends, Request, Security
@@ -11,6 +11,7 @@ from fastapi.security import (
     HTTPBasic,
     HTTPBasicCredentials,
     HTTPBearer,
+    OAuth2AuthorizationCodeBearer,
     OAuth2PasswordBearer,
 )
 from pwdlib.exceptions import UnknownHashError
@@ -44,6 +45,7 @@ from todo_api.repositories.api_key import get_active_api_key_by_hash
 from todo_api.repositories.user import get_user_by_email, get_user_by_id
 from todo_api.services.api_key import APIKeyService
 from todo_api.services.auth import AuthService
+from todo_api.services.oauth import OAuthService
 from todo_api.services.todo import TodoService
 from todo_api.services.user import UserService
 from todo_api.utils.email import normalize_email
@@ -54,10 +56,16 @@ HEADER_API_KEY_AUTH = "api_key_header"
 QUERY_API_KEY_AUTH = "api_key_query"
 
 
-# Security transports. OAuth2PasswordBearer is the single access-token transport.
+# Security transports.
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",
     scheme_name="OAuth2PasswordBearer",
+)
+oauth2_password_scheme = oauth2_scheme
+oauth2_authorization_code_scheme = OAuth2AuthorizationCodeBearer(
+    authorizationUrl="/api/v1/auth/authorize",
+    tokenUrl="/api/v1/auth/token",
+    scheme_name="OAuth2AuthorizationCodeBearer",
 )
 bearer_schema = HTTPBearer(
     scheme_name="HTTPBearer",
@@ -80,6 +88,8 @@ api_key_query_scheme = APIKeyQuery(
 # Low-level dependency values.
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 AccessToken = Annotated[str, Security(oauth2_scheme)]
+PasswordGrantAccessToken = AccessToken
+AuthorizationCodeAccessToken = Annotated[str, Security(oauth2_authorization_code_scheme)]
 BearerCredentials = Annotated[HTTPAuthorizationCredentials, Security(bearer_schema)]
 BasicCredentials = Annotated[HTTPBasicCredentials | None, Security(basic_scheme)]
 HeaderAPIKey = Annotated[str | None, Security(api_key_header_scheme)]
@@ -136,10 +146,20 @@ async def _authenticate_access_token(
 
 async def get_current_user(
     settings: AppSettings,
-    token: AccessToken,
+    token: PasswordGrantAccessToken,
     session: DbSession,
 ) -> User:
-    """Authenticate the current user from an OAuth2 bearer access token."""
+    """Authenticate an access token obtained through the password flow."""
+
+    return await _authenticate_access_token(token, settings, session)
+
+
+async def get_current_authorization_code_user(
+    settings: AppSettings,
+    token: AuthorizationCodeAccessToken,
+    session: DbSession,
+) -> User:
+    """Authenticate an access token obtained through Authorization Code."""
 
     return await _authenticate_access_token(token, settings, session)
 
@@ -241,7 +261,13 @@ def get_api_key_service(session: DbSession) -> APIKeyService:
 
 def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:
     return AuthService(session=session, settings=settings)
-   
+
+
+def get_oauth_service(
+    session: DbSession, settings: AppSettings, auth: AuthServiceDep
+) -> OAuthService:
+    return OAuthService(session=session, settings=settings, auth=auth)
+
 
 def get_todo_service(session: DbSession) -> TodoService:
     return TodoService(session=session)
@@ -252,12 +278,16 @@ def get_user_service(session: DbSession) -> UserService:
 
 
 # Route-facing dependencies.
-CurrentUser = Annotated[User, Depends(get_current_user)]
-CurrentBearerUser = Annotated[User, Depends(get_current_bearer_user)]
-CurrentBasicUser = Annotated[User, Depends(get_current_basic_user)]
-CurrentHeaderAPIKeyUser = Annotated[User, Depends(get_current_header_api_key_user)]
-CurrentQueryAPIKeyUser = Annotated[User, Depends(get_current_query_api_key_user)]
+CurrentUser: TypeAlias = Annotated[User, Depends(get_current_user)]
+CurrentAuthorizationCodeUser: TypeAlias = Annotated[
+    User, Depends(get_current_authorization_code_user)
+]
+CurrentBearerUser: TypeAlias = Annotated[User, Depends(get_current_bearer_user)]
+CurrentBasicUser: TypeAlias = Annotated[User, Depends(get_current_basic_user)]
+CurrentHeaderAPIKeyUser: TypeAlias = Annotated[User, Depends(get_current_header_api_key_user)]
+CurrentQueryAPIKeyUser: TypeAlias = Annotated[User, Depends(get_current_query_api_key_user)]
 APIKeyServiceDep = Annotated[APIKeyService, Depends(get_api_key_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+OAuthServiceDep = Annotated[OAuthService, Depends(get_oauth_service)]
 TodoServiceDep = Annotated[TodoService, Depends(get_todo_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
