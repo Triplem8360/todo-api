@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Response, status
 
 from todo_api.api.deps import (
+    CurrentAuthorizationCodeUser,
     CurrentBasicUser,
     CurrentHeaderAPIKeyUser,
     CurrentQueryAPIKeyUser,
@@ -14,7 +15,6 @@ from todo_api.exceptions.user import (
     AccountDeactivationUnavailableError,
     ProfileUpdateUnavailableError,
 )
-from todo_api.models.user import User
 from todo_api.schemas.user import UserProfileUpdateSchema, UserResponseSchema
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -25,10 +25,10 @@ router = APIRouter(prefix="/users", tags=["Users"])
     response_model=UserResponseSchema,
     summary="Get my profile",
 )
-async def get_current_user(current_user: CurrentUser) -> User:
+async def get_current_user(current_user: CurrentAuthorizationCodeUser) -> UserResponseSchema:
     """Return the user authenticated by the primary access-token flow."""
 
-    return current_user
+    return UserResponseSchema.model_validate(current_user)
 
 
 @router.patch(
@@ -46,8 +46,9 @@ async def update_current_user(
     payload: UserProfileUpdateSchema,
     service: UserServiceDep,
     current_user: CurrentUser,
-) -> User:
-    return await service.update_profile(current_user, payload)
+) -> UserResponseSchema:
+    updated_user = await service.update_profile(current_user, payload)
+    return UserResponseSchema.model_validate(updated_user)
 
 
 @router.delete(
@@ -74,10 +75,10 @@ async def deactivate_current_user(
     response_model=UserResponseSchema,
     summary="Get my profile with an API key",
 )
-async def get_current_api_key_user(current_user: CurrentHeaderAPIKeyUser) -> User:
+async def get_current_api_key_user(current_user: CurrentHeaderAPIKeyUser) -> UserResponseSchema:
     """Authenticate with the preferred X-API-Key header transport."""
 
-    return current_user
+    return UserResponseSchema.model_validate(current_user)
 
 
 @router.get(
@@ -85,10 +86,10 @@ async def get_current_api_key_user(current_user: CurrentHeaderAPIKeyUser) -> Use
     response_model=UserResponseSchema,
     summary="Get my profile with Basic authentication",
 )
-async def get_current_basic_user(current_user: CurrentBasicUser) -> User:
+async def get_current_basic_user(current_user: CurrentBasicUser) -> UserResponseSchema:
     """Compatibility endpoint for HTTP Basic credentials."""
 
-    return current_user
+    return UserResponseSchema.model_validate(current_user)
 
 
 @router.get(
@@ -97,7 +98,9 @@ async def get_current_basic_user(current_user: CurrentBasicUser) -> User:
     summary="Get my profile with a query API key",
     deprecated=True,
 )
-async def get_current_query_api_key_user(current_user: CurrentQueryAPIKeyUser) -> User:
+async def get_current_query_api_key_user(
+    current_user: CurrentQueryAPIKeyUser,
+) -> UserResponseSchema:
     """Deprecated compatibility endpoint; URLs can leak API keys."""
 
-    return current_user
+    return UserResponseSchema.model_validate(current_user)

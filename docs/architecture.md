@@ -19,6 +19,57 @@ API routes -> dependencies -> services -> repositories -> models -> PostgreSQL
 
 ## Authentication lifecycle
 
+### Authorization Code + PKCE
+
+The OpenAPI security scheme describes an OAuth 2.0 Authorization Code flow. The application
+currently acts as both authorization server and resource server for one configured first-party
+public client. Swagger UI is the built-in development client, not part of the server-side
+security boundary.
+
+```text
+Swagger UI or another client
+    |
+    | GET /auth/authorize + state + S256 challenge
+    v
+authorization route -> OAuthService -> AuthService -> user repository
+    |
+    | 303 redirect + plaintext one-time code
+    v
+client callback
+    |
+    | POST /auth/token + code + original verifier
+    v
+token route -> OAuthService -> OAuth repository -> AuthService
+    |
+    | access token + rotating refresh token
+    v
+protected API route -> access-token dependency -> owner-scoped repository
+```
+
+The client owns the transient protocol values. It generates and retains the PKCE verifier,
+derives its S256 challenge, generates `state`, validates the returned state, follows the
+callback, and performs the token request. The server does not persist `state`; it validates
+the authorization request and returns state unchanged.
+
+The server authenticates the resource owner at the authorization endpoint. After successful
+password authentication, `OAuthService` generates a plaintext one-time code and passes its
+SHA-256 hash and immutable user, client, redirect, challenge, and expiry bindings to the OAuth
+repository. The plaintext code exists only in the redirect response.
+
+The token exchange calculates the S256 challenge from the presented verifier. The repository
+uses one `UPDATE ... RETURNING` statement constrained by every binding, the expiration
+predicate, and `consumed_at IS NULL`. A successful match records consumption while retaining
+the row for lifecycle visibility and replay rejection.
+
+Authorization-code consumption and refresh-session creation use the same database session and
+commit. A propagated persistence error rolls back both, so the code is not lost without a token
+pair and a token pair is not committed without consuming the code.
+
+No OAuth scopes currently participate in this lifecycle. Non-empty scope requests are rejected,
+access tokens have no scope claim, and protected resources rely on the token subject, active-user
+validation, and ownership queries. A future scope implementation must carry one non-escalating
+authorized scope set across the authorization code, access token, and refresh session.
+
 ### Login
 
 Login verifies the user's password and creates a new independent refresh session.

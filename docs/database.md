@@ -14,6 +14,7 @@ The schema contains:
 
 * `users`;
 * `refresh_sessions`;
+* `oauth_authorization_codes`;
 * `api_keys`;
 * `todos`.
 
@@ -29,7 +30,40 @@ The `users` table stores:
 
 The email unique constraint provides uniqueness and an indexed lookup.
 
-Deleting a user cascades to their refresh sessions, API keys, and Todos.
+Deleting a user cascades to their refresh sessions, authorization codes, API keys, and Todos.
+
+## OAuth authorization codes
+
+`oauth_authorization_codes` represents the server-side lifecycle of short-lived Authorization
+Code grants. It contains the immutable bindings needed for token exchange and the timestamp of
+successful consumption:
+
+* `code_hash`: SHA-256 code hash and primary lookup key;
+* `user_id`: resource owner;
+* `client_id`: public client binding;
+* `redirect_uri`: exact redirect binding;
+* `code_challenge`: 43-character S256 PKCE challenge;
+* `expires_at`: redemption deadline;
+* `consumed_at`: successful one-time redemption timestamp;
+* creation and update timestamps.
+
+The raw authorization code is never stored. Its SHA-256 hash is the lookup key, so disclosure
+of the table does not directly reveal an exchangeable code. The PKCE verifier is also never
+stored; only the challenge derived by the client is persisted.
+
+Successful exchange calculates a challenge from the presented verifier and marks the matching
+row with one `UPDATE ... RETURNING` statement. The update includes every client and PKCE binding,
+requires an unexpired record, and succeeds only while `consumed_at IS NULL`. Retaining the row
+preserves the grant lifecycle and makes subsequent exchange attempts fail as replay.
+
+The code-consumption update and refresh-session insert share one transaction. If session
+creation or commit fails, both changes roll back.
+
+`state` is not stored in this table. It belongs to the client authorization transaction and is
+returned unchanged by the authorization endpoint. OAuth scopes are also not stored because the
+current server rejects every non-empty scope request. A future scope implementation must persist
+the authorized scope set with the code so the token endpoint can issue only the permissions
+approved during authorization.
 
 ## Refresh sessions
 
@@ -113,7 +147,9 @@ propagates during request processing.
 
 ## Cleanup
 
-Expired and old revoked refresh sessions may be deleted periodically.
+Expired authorization codes and old revoked refresh sessions may be deleted periodically.
+
+Expired authorization codes are also pruned opportunistically when a new code is issued.
 
 Cleanup is not required for authentication correctness because expiration and revocation are
 checked when a refresh token is used.
