@@ -5,6 +5,7 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 * stateless, short-lived JWT access tokens;
 * OAuth 2.0 Authorization Code flow with mandatory PKCE/S256;
 * rotating refresh-token sessions with replay detection;
+* HttpOnly browser sessions with scoped cookies and CSRF protection;
 * sliding refresh expiration and a fixed session lifetime;
 * Argon2 password hashing and hashed API keys;
 * owner-scoped Todo CRUD, filtering, sorting, and pagination;
@@ -87,6 +88,33 @@ POST /api/v1/auth/logout
 Refresh rotation replaces both tokens. Reusing an old token outside the configured grace period revokes that session.
 
 Access tokens remain valid until expiration because bearer authentication does not query the refresh-session table on every request.
+
+### Browser cookie sessions
+
+Browser clients that do not need direct token access can use:
+
+```text
+POST /api/v1/auth/browser/login
+POST /api/v1/auth/browser/refresh
+POST /api/v1/auth/browser/logout
+```
+
+Login uses the same OAuth2 password form as `/auth/login`, but returns only session metadata.
+The access and refresh tokens are stored in `HttpOnly` cookies, so application JavaScript
+cannot read them. A third, readable `todo_csrf_token` cookie must be copied into the
+`X-CSRF-Token` header for refresh, logout, and any unsafe cookie-authenticated API request.
+Bearer-header clients do not need the CSRF header.
+
+The refresh cookie is restricted to `/api/v1/auth/browser`; the short-lived access and CSRF
+cookies are restricted to `/api/v1`. Cookie lifetimes follow the actual JWT/session deadline,
+and all three values rotate together on refresh. Configure deployment behavior with:
+
+```env
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAMESITE=lax
+```
+
+`AUTH_COOKIE_SECURE=true` is required by configuration validation in staging and production.
 
 OAuth client settings are configured through:
 

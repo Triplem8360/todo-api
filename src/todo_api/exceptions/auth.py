@@ -48,6 +48,11 @@ class InvalidRefreshTokenError(AuthServiceError):
     public_message = "Refresh token is invalid or expired."
 
 
+class InvalidCSRFTokenError(AuthServiceError):
+    error_code = "invalid_csrf_token"
+    public_message = "CSRF token is missing or invalid."
+
+
 class RefreshTokenReuseDetectedError(InvalidRefreshTokenError):
     error_code = "refresh_token_reuse_detected"
     public_message = "Refresh token reuse was detected. Sign in again."

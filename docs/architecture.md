@@ -115,6 +115,22 @@ During refresh, the service:
 
 The session identifier remains unchanged during rotation.
 
+### Browser cookie transport
+
+The browser-session routes reuse the same token issuance, refresh-session persistence, token
+rotation, replay detection, and revocation services. The transport layer stores access and
+refresh JWTs in scoped HttpOnly cookies instead of exposing them in JSON.
+
+A separate readable CSRF cookie implements the double-submit pattern. When an access cookie is
+selected because no explicit bearer credential was supplied, unsafe request methods require a
+matching `X-CSRF-Token` header. Header-based bearer authentication remains independent of CSRF
+because browsers do not attach authorization headers ambiently.
+
+The refresh cookie is scoped to the browser-auth route subtree, while access and CSRF cookies
+are scoped to the versioned API. Cookie Max-Age values are derived from the issued token
+lifetimes, including the fixed session deadline. Login and refresh responses use `no-store`,
+and refresh rotates the CSRF value together with both credentials.
+
 ### Token lifetime
 
 Authentication uses:
