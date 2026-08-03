@@ -5,6 +5,7 @@ from typing import Annotated, TypeAlias
 from anyio import to_thread
 from fastapi import Depends, Request, Security
 from fastapi.security import (
+    APIKeyCookie,
     APIKeyHeader,
     APIKeyQuery,
     HTTPAuthorizationCredentials,
@@ -19,6 +20,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from todo_api.core.config import Settings
+from todo_api.core.cookies import (
+    ACCESS_COOKIE_NAME,
+    validate_cookie_csrf,
+)
 from todo_api.core.security import (
     API_KEY_HEADER,
     DUMMY_PASSWORD_HASH,
@@ -60,15 +65,24 @@ QUERY_API_KEY_AUTH = "api_key_query"
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",
     scheme_name="OAuth2PasswordBearer",
+    auto_error=False,
 )
 oauth2_password_scheme = oauth2_scheme
 oauth2_authorization_code_scheme = OAuth2AuthorizationCodeBearer(
     authorizationUrl="/api/v1/auth/authorize",
     tokenUrl="/api/v1/auth/token",
     scheme_name="OAuth2AuthorizationCodeBearer",
+    auto_error=False,
 )
 bearer_schema = HTTPBearer(
     scheme_name="HTTPBearer",
+    auto_error=False,
+)
+access_cookie_scheme = APIKeyCookie(
+    name=ACCESS_COOKIE_NAME,
+    scheme_name="BrowserAccessCookie",
+    description="HttpOnly access cookie issued by /api/v1/auth/browser/login.",
+    auto_error=False,
 )
 basic_scheme = HTTPBasic(scheme_name="BasicAuth", auto_error=False)
 api_key_header_scheme = APIKeyHeader(
@@ -87,10 +101,11 @@ api_key_query_scheme = APIKeyQuery(
 
 # Low-level dependency values.
 DbSession = Annotated[AsyncSession, Depends(get_session)]
-AccessToken = Annotated[str, Security(oauth2_scheme)]
+AccessToken = Annotated[str | None, Security(oauth2_scheme)]
 PasswordGrantAccessToken = AccessToken
-AuthorizationCodeAccessToken = Annotated[str, Security(oauth2_authorization_code_scheme)]
-BearerCredentials = Annotated[HTTPAuthorizationCredentials, Security(bearer_schema)]
+AuthorizationCodeAccessToken = Annotated[str | None, Security(oauth2_authorization_code_scheme)]
+BearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Security(bearer_schema)]
+AccessCookie = Annotated[str | None, Security(access_cookie_scheme)]
 BasicCredentials = Annotated[HTTPBasicCredentials | None, Security(basic_scheme)]
 HeaderAPIKey = Annotated[str | None, Security(api_key_header_scheme)]
 QueryAPIKey = Annotated[str | None, Security(api_key_query_scheme)]
@@ -144,34 +159,62 @@ async def _authenticate_access_token(
     return _require_active_user(user, ACCESS_TOKEN_AUTH)
 
 
+def _select_access_token(
+    request: Request,
+    explicit_token: str | None,
+    cookie_token: str | None,
+) -> str:
+    """Prefer an explicit bearer token and otherwise validate cookie transport."""
+
+    if explicit_token:
+        return explicit_token
+
+    if cookie_token:
+        validate_cookie_csrf(request)
+        return cookie_token
+
+    record_auth_attempt(ACCESS_TOKEN_AUTH, "missing")
+    raise InvalidAccessTokenError()
+
+
 async def get_current_user(
     settings: AppSettings,
+    request: Request,
     token: PasswordGrantAccessToken,
+    cookie_token: AccessCookie,
     session: DbSession,
 ) -> User:
     """Authenticate an access token obtained through the password flow."""
 
-    return await _authenticate_access_token(token, settings, session)
+    selected_token = _select_access_token(request, token, cookie_token)
+    return await _authenticate_access_token(selected_token, settings, session)
 
 
 async def get_current_authorization_code_user(
     settings: AppSettings,
+    request: Request,
     token: AuthorizationCodeAccessToken,
+    cookie_token: AccessCookie,
     session: DbSession,
 ) -> User:
     """Authenticate an access token obtained through Authorization Code."""
 
-    return await _authenticate_access_token(token, settings, session)
+    selected_token = _select_access_token(request, token, cookie_token)
+    return await _authenticate_access_token(selected_token, settings, session)
 
 
 async def get_current_bearer_user(
     settings: AppSettings,
+    request: Request,
     credentials: BearerCredentials,
+    cookie_token: AccessCookie,
     session: DbSession,
 ) -> User:
     """Authenticate the current user from a direct HTTP Bearer token."""
 
-    return await _authenticate_access_token(credentials.credentials, settings, session)
+    bearer_token = credentials.credentials if credentials is not None else None
+    selected_token = _select_access_token(request, bearer_token, cookie_token)
+    return await _authenticate_access_token(selected_token, settings, session)
 
 
 async def get_current_basic_user(

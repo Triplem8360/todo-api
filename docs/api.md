@@ -12,6 +12,9 @@ All paths below use the `/api/v1` prefix.
 | POST   | `/auth/token`             | Authorization code + PKCE | Exchange a code for tokens          |
 | POST   | `/auth/refresh`           | Refresh token in JSON     | Rotate the session token pair       |
 | POST   | `/auth/logout`            | Refresh token in JSON     | Revoke a login session              |
+| POST   | `/auth/browser/login`     | OAuth2 password form      | Create a browser cookie session     |
+| POST   | `/auth/browser/refresh`   | Refresh cookie + CSRF     | Rotate browser session cookies      |
+| POST   | `/auth/browser/logout`    | Refresh cookie + CSRF     | Revoke and clear a browser session  |
 | POST   | `/api-keys`               | Bearer access token       | Create an API key                   |
 | GET    | `/api-keys`               | Bearer access token       | List owned API keys                 |
 | DELETE | `/api-keys/{id}`          | Bearer access token       | Revoke an owned API key             |
@@ -255,6 +258,87 @@ Cost:
 Operations requiring a smaller revocation window should use a shorter configured access-token
 lifetime.
 
+## Browser cookie sessions
+
+The `/auth/browser/*` routes provide a browser-oriented alternative to exposing tokens to
+application JavaScript. They create the same database-backed refresh sessions as the JSON
+token routes, while transporting credentials through cookies.
+
+### Login
+
+Send an OAuth2 password form to:
+
+```http
+POST /api/v1/auth/browser/login
+Content-Type: application/x-www-form-urlencoded
+
+username=user@example.com&password=correct-password
+```
+
+The response contains session metadata but no credentials:
+
+```json
+{
+  "authenticated": true,
+  "expires_in": 900
+}
+```
+
+It sets three host-only cookies:
+
+| Cookie               | JavaScript access | Path                           | Purpose                         |
+| -------------------- | ----------------- | ------------------------------ | ------------------------------- |
+| `todo_access_token`  | No (`HttpOnly`)   | `/api/v1`                      | Authenticate ordinary requests  |
+| `todo_refresh_token` | No (`HttpOnly`)   | `/api/v1/auth/browser`         | Rotate or revoke the session    |
+| `todo_csrf_token`    | Yes               | `/api/v1`                      | Double-submit CSRF verification |
+
+The access cookie expires with the access token. The refresh and CSRF cookies expire with the
+actual refresh token, including any shortening caused by the session's fixed absolute deadline.
+All cookies are set with the configured `SameSite` policy. `Secure` is controlled by
+`AUTH_COOKIE_SECURE`, which must be enabled in staging and production.
+
+### Cookie authentication and CSRF
+
+Protected endpoints accept the access cookie when an explicit bearer header is absent. An
+explicit `Authorization: Bearer ...` credential always takes precedence and retains the
+existing API-client behavior.
+
+For `POST`, `PUT`, `PATCH`, and `DELETE` requests authenticated by cookie, JavaScript must read
+the `todo_csrf_token` cookie and send the exact value in a header:
+
+```http
+X-CSRF-Token: <value from todo_csrf_token>
+```
+
+The API compares the header and cookie using a timing-safe comparison. Missing or different
+values return `403 invalid_csrf_token`. Safe methods (`GET`, `HEAD`, `OPTIONS`, and `TRACE`) do
+not require this header. Requests authenticated by an explicit bearer header are not subject
+to cookie CSRF validation.
+
+### Refresh and logout
+
+Rotate all three cookies with:
+
+```http
+POST /api/v1/auth/browser/refresh
+X-CSRF-Token: <value from todo_csrf_token>
+```
+
+The refresh token is read only from its HttpOnly cookie. A successful response contains only
+the updated access lifetime, and the CSRF value changes along with the access and refresh
+credentials. Clients should serialize refresh calls and reread the CSRF cookie afterward.
+
+Revoke the refresh session and expire all browser cookies with:
+
+```http
+POST /api/v1/auth/browser/logout
+X-CSRF-Token: <value from todo_csrf_token>
+```
+
+The CSRF cookie/header pair is always required for logout, including when the refresh cookie is
+already absent. With valid CSRF proof, logout remains idempotent and still sends
+cookie-expiration headers.
+
 ## Refresh tokens
 
 Refresh tokens are longer-lived, rotating session credentials.
@@ -468,6 +552,8 @@ calling logout.
 Clients should:
 
 * store refresh tokens in secure platform-appropriate storage;
+* prefer the browser cookie flow when JavaScript does not need raw credentials;
+* mirror the readable CSRF cookie into `X-CSRF-Token` for unsafe cookie requests;
 * replace access and refresh tokens together after rotation;
 * serialize refresh operations;
 * use only the most recently returned refresh token;

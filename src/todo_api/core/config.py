@@ -104,6 +104,14 @@ class Settings(BaseSettings):
         ge=timedelta(0),
         validation_alias="REFRESH_TOKEN_REUSE_GRACE",
     )
+    auth_cookie_secure: bool = Field(
+        default=False,
+        validation_alias="AUTH_COOKIE_SECURE",
+    )
+    auth_cookie_samesite: Literal["lax", "strict"] = Field(
+        default="lax",
+        validation_alias="AUTH_COOKIE_SAMESITE",
+    )
 
     oauth2_public_client_id: str = Field(
         default="todo-public-client",
@@ -184,6 +192,8 @@ class Settings(BaseSettings):
             normalized = secret.strip().casefold()
             if len(set(normalized)) < 8 or normalized.startswith("change-this"):
                 raise ValueError("SECRET_KEY must be a strong, randomly generated value.")
+            if not self.auth_cookie_secure:
+                raise ValueError("AUTH_COOKIE_SECURE must be enabled in staging and production.")
         return self
 
 

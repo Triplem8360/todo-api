@@ -49,6 +49,16 @@ class TokenResponseSchema(BaseModel):
     )
 
 
+class BrowserSessionResponseSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authenticated: Literal[True] = True
+    expires_in: int = Field(
+        gt=0,
+        description="Access-cookie lifetime in seconds.",
+    )
+
+
 class RefreshTokenRequestSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
