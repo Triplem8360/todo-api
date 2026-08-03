@@ -3,11 +3,10 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, datetime
 
-from fastapi import Request, Response
+from fastapi import Response
 
 from todo_api.core.config import Settings
 from todo_api.core.security import decode_refresh_token
-from todo_api.exceptions.auth import InvalidCSRFTokenError
 from todo_api.schemas.token import TokenResponseSchema
 
 ACCESS_COOKIE_NAME = "todo_access_token"
@@ -89,19 +88,3 @@ def clear_browser_session_cookies(response: Response, settings: Settings) -> Non
         httponly=False,
         samesite=settings.auth_cookie_samesite,
     )
-
-
-def validate_cookie_csrf(request: Request) -> None:
-    """Require a matching CSRF cookie/header pair for unsafe requests."""
-
-    if request.method.upper() in SAFE_METHODS:
-        return
-
-    cookie_token = request.cookies.get(CSRF_COOKIE_NAME, "")
-    header_token = request.headers.get(CSRF_HEADER_NAME, "")
-
-    if not cookie_token or not header_token:
-        raise InvalidCSRFTokenError()
-
-    if not secrets.compare_digest(cookie_token, header_token):
-        raise InvalidCSRFTokenError()

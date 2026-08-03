@@ -5,13 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from todo_api.api.deps import AuthServiceDep
+from todo_api.api.deps import AuthServiceDep, require_browser_csrf_token
 from todo_api.api.responses import error_response
 from todo_api.core.cookies import (
     REFRESH_COOKIE_NAME,
     clear_browser_session_cookies,
     set_browser_session_cookies,
-    validate_cookie_csrf,
 )
 from todo_api.exceptions.auth import (
     AuthServiceError,
@@ -195,6 +194,7 @@ async def refresh(
             description="Token refresh is unavailable.",
         ),
     },
+    dependencies=[Depends(require_browser_csrf_token)],
 )
 async def refresh_browser_session(
     request: Request,
@@ -204,8 +204,6 @@ async def refresh_browser_session(
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if not refresh_token:
         raise InvalidRefreshTokenError()
-
-    validate_cookie_csrf(request)
 
     try:
         tokens = await service.refresh_login_session(refresh_token)
@@ -252,12 +250,12 @@ async def logout(
             description="Logout is unavailable.",
         ),
     },
+    dependencies=[Depends(require_browser_csrf_token)],
 )
 async def logout_browser_session(
     request: Request,
     service: AuthServiceDep,
 ) -> Response:
-    validate_cookie_csrf(request)
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if refresh_token:
         await service.revoke_refresh_session(refresh_token)

@@ -72,7 +72,7 @@ class OAuthService:
         """Authenticate the user and persist a hashed, short-lived code."""
 
         self.validate_authorization_request(request)
-        
+
         try:
             user = await self.auth.authenticate(email, password)
         except LoginSessionUnavailableError as exc:
@@ -87,7 +87,7 @@ class OAuthService:
                 self.session,
                 expired_at=now,
             )
-            
+
             await create_authorization_code(
                 self.session,
                 code_hash=hash_secret(raw_code),
@@ -97,7 +97,7 @@ class OAuthService:
                 code_challenge=request.code_challenge,
                 expires_at=expires_at,
             )
-            
+
             await self.session.commit()
         except SQLAlchemyError as exc:
             raise AuthorizationCodeIssuanceUnavailableError() from exc

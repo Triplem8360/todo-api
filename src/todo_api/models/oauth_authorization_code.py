@@ -24,8 +24,7 @@ class OAuthAuthorizationCode(TimestampMixin, Base):
         CheckConstraint("char_length(redirect_uri) > 0", name="redirect_uri_not_empty"),
         CheckConstraint("expires_at > created_at", name="expiration"),
         CheckConstraint(
-            "consumed_at IS NULL OR " 
-            "(consumed_at >= created_at AND consumed_at <= expires_at)",
+            "consumed_at IS NULL OR " "(consumed_at >= created_at AND consumed_at <= expires_at)",
             name="consumption_window",
         ),
         Index("ix_oauth_authorization_codes_expires_at", "expires_at"),

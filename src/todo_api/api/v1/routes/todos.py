@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from todo_api.api.deps import (
     CurrentAuthorizationCodeUser,
     CurrentBearerUser,
     TodoServiceDep,
+    require_csrf_token,
 )
 from todo_api.api.responses import error_response
 from todo_api.exceptions.auth import (
@@ -59,6 +60,7 @@ _UNAVAILABLE_RESPONSE = error_response(
         **_AUTH_RESPONSES,
         status.HTTP_503_SERVICE_UNAVAILABLE: _UNAVAILABLE_RESPONSE,
     },
+    dependencies=[Depends(require_csrf_token)],
 )
 async def create_todo(
     payload: TodoCreateSchema,
@@ -95,6 +97,7 @@ async def list_todos(
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: _UNAVAILABLE_RESPONSE,
     },
+    dependencies=[Depends(require_csrf_token)],
 )
 async def get_todo(
     todo_id: TodoId,
@@ -119,6 +122,7 @@ async def get_todo(
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: _UNAVAILABLE_RESPONSE,
     },
+    dependencies=[Depends(require_csrf_token)],
 )
 async def update_todo(
     todo_id: TodoId,
