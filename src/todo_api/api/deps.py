@@ -22,13 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from todo_api.core.config import Settings
 from todo_api.core.cookies import (
     ACCESS_COOKIE_NAME,
-    validate_cookie_csrf,
+    CSRF_COOKIE_NAME,
+    REFRESH_COOKIE_NAME,
 )
 from todo_api.core.security import (
     API_KEY_HEADER,
+    CSRF_TOKEN_HEADER,
     DUMMY_PASSWORD_HASH,
     decode_access_token,
     hash_secret,
+    verify_csrf_token,
     verify_password,
 )
 from todo_api.db.session import get_session
@@ -42,6 +45,7 @@ from todo_api.exceptions.auth import (
     InactiveUserError,
     InvalidAccessTokenError,
     InvalidBasicCredentialsError,
+    InvalidCSRFTokenError,
     TokenAuthenticationUnavailableError,
 )
 from todo_api.models.user import User
@@ -81,7 +85,11 @@ bearer_schema = HTTPBearer(
 access_cookie_scheme = APIKeyCookie(
     name=ACCESS_COOKIE_NAME,
     scheme_name="BrowserAccessCookie",
-    description="HttpOnly access cookie issued by /api/v1/auth/browser/login.",
+    description=(
+        "Browser-managed HttpOnly access cookie issued by "
+        "POST /api/v1/auth/browser/login. Do not paste a value "
+        "into Swagger; the browser sends this cookie automatically."
+    ),
     auto_error=False,
 )
 basic_scheme = HTTPBasic(scheme_name="BasicAuth", auto_error=False)
@@ -97,6 +105,12 @@ api_key_query_scheme = APIKeyQuery(
     description="Compatibility-only transport; prefer the X-API-Key header.",
     auto_error=False,
 )
+csrf_header_scheme = APIKeyHeader(
+    name=CSRF_TOKEN_HEADER,
+    scheme_name="BrowserCSRF",
+    description="For browser cookie authentication, copy the value of the todo_csrf_token cookie and paste it here.",
+    auto_error=False,
+)
 
 
 # Low-level dependency values.
@@ -109,6 +123,7 @@ AccessCookie = Annotated[str | None, Security(access_cookie_scheme)]
 BasicCredentials = Annotated[HTTPBasicCredentials | None, Security(basic_scheme)]
 HeaderAPIKey = Annotated[str | None, Security(api_key_header_scheme)]
 QueryAPIKey = Annotated[str | None, Security(api_key_query_scheme)]
+CSRFHeader = Annotated[str | None, Security(csrf_header_scheme)]
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -159,18 +174,13 @@ async def _authenticate_access_token(
     return _require_active_user(user, ACCESS_TOKEN_AUTH)
 
 
-def _select_access_token(
-    request: Request,
-    explicit_token: str | None,
-    cookie_token: str | None,
-) -> str:
+def _select_access_token(explicit_token: str | None, cookie_token: str | None) -> str:
     """Prefer an explicit bearer token and otherwise validate cookie transport."""
 
     if explicit_token:
         return explicit_token
 
     if cookie_token:
-        validate_cookie_csrf(request)
         return cookie_token
 
     record_auth_attempt(ACCESS_TOKEN_AUTH, "missing")
@@ -179,33 +189,30 @@ def _select_access_token(
 
 async def get_current_user(
     settings: AppSettings,
-    request: Request,
     token: PasswordGrantAccessToken,
     cookie_token: AccessCookie,
     session: DbSession,
 ) -> User:
     """Authenticate an access token obtained through the password flow."""
 
-    selected_token = _select_access_token(request, token, cookie_token)
+    selected_token = _select_access_token(token, cookie_token)
     return await _authenticate_access_token(selected_token, settings, session)
 
 
 async def get_current_authorization_code_user(
     settings: AppSettings,
-    request: Request,
     token: AuthorizationCodeAccessToken,
     cookie_token: AccessCookie,
     session: DbSession,
 ) -> User:
     """Authenticate an access token obtained through Authorization Code."""
 
-    selected_token = _select_access_token(request, token, cookie_token)
+    selected_token = _select_access_token(token, cookie_token)
     return await _authenticate_access_token(selected_token, settings, session)
 
 
 async def get_current_bearer_user(
     settings: AppSettings,
-    request: Request,
     credentials: BearerCredentials,
     cookie_token: AccessCookie,
     session: DbSession,
@@ -213,7 +220,7 @@ async def get_current_bearer_user(
     """Authenticate the current user from a direct HTTP Bearer token."""
 
     bearer_token = credentials.credentials if credentials is not None else None
-    selected_token = _select_access_token(request, bearer_token, cookie_token)
+    selected_token = _select_access_token(bearer_token, cookie_token)
     return await _authenticate_access_token(selected_token, settings, session)
 
 
@@ -318,6 +325,42 @@ def get_todo_service(session: DbSession) -> TodoService:
 
 def get_user_service(session: DbSession) -> UserService:
     return UserService(session=session)
+
+
+def _has_explicit_bearer_token(request: Request) -> bool:
+    """Check whether the request explicitly uses Bearer authentication."""
+
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, credential = authorization.partition(" ")
+
+    return scheme.casefold() == "bearer" and bool(credential.strip())
+
+
+def require_csrf_token(request: Request, csrf_header: CSRFHeader) -> None:
+    """Require CSRF protection when access-cookie authentication is used."""
+
+    if _has_explicit_bearer_token(request):
+        return
+
+    if request.cookies.get(ACCESS_COOKIE_NAME) is None:
+        return
+
+    if not verify_csrf_token(csrf_header, request.cookies.get(CSRF_COOKIE_NAME)):
+        raise InvalidCSRFTokenError()
+
+
+def require_browser_csrf_token(request: Request, csrf_header: CSRFHeader) -> None:
+    """Require CSRF protection for an existing browser cookie session."""
+
+    access_cookie = request.cookies.get(ACCESS_COOKIE_NAME)
+    refresh_cookie = request.cookies.get(REFRESH_COOKIE_NAME)
+
+    # Let the endpoint return its own missing-session response.
+    if access_cookie is None and refresh_cookie is None:
+        return
+
+    if not verify_csrf_token(csrf_header, request.cookies.get(CSRF_COOKIE_NAME)):
+        raise InvalidCSRFTokenError()
 
 
 # Route-facing dependencies.

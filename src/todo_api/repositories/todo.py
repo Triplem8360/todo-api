@@ -12,12 +12,7 @@ from todo_api.schemas.todo import SortDirection, TodoSortField
 
 
 def _escape_like(value: str) -> str:
-    return (
-        value
-        .replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _filters(
@@ -72,20 +67,12 @@ def _apply_ordering(
         TodoSortField.TITLE: Todo.title,
     }[sort_by]
 
-    order = (
-        column.asc()
-        if sort_direction == SortDirection.ASC
-        else column.desc()
-    )
+    order = column.asc() if sort_direction == SortDirection.ASC else column.desc()
 
     if sort_by == TodoSortField.DUE_AT:
         order = order.nulls_last()
 
-    id_order = (
-        Todo.id.asc()
-        if sort_direction == SortDirection.ASC
-        else Todo.id.desc()
-    )
+    id_order = Todo.id.asc() if sort_direction == SortDirection.ASC else Todo.id.desc()
 
     return statement.order_by(order, id_order)
 
@@ -156,17 +143,17 @@ async def list_owned_todos(
         due_to=due_to,
     )
 
-    items_statement = _apply_ordering(
-        select(Todo).where(*conditions),
-        sort_by=sort_by,
-        sort_direction=sort_direction,
-    ).limit(limit).offset(offset)
-
-    count_statement = (
-        select(func.count())
-        .select_from(Todo)
-        .where(*conditions)
+    items_statement = (
+        _apply_ordering(
+            select(Todo).where(*conditions),
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+        )
+        .limit(limit)
+        .offset(offset)
     )
+
+    count_statement = select(func.count()).select_from(Todo).where(*conditions)
 
     items = (await session.scalars(items_statement)).all()
     total = int(await session.scalar(count_statement) or 0)

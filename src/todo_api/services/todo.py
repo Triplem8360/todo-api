@@ -92,10 +92,7 @@ class TodoService:
             raise TodoServiceUnavailableError() from exc
 
         return TodoListResponseSchema(
-            items=[
-                TodoResponseSchema.model_validate(todo)
-                for todo in items
-            ],
+            items=[TodoResponseSchema.model_validate(todo) for todo in items],
             total=total,
             limit=query.limit,
             offset=query.offset,
@@ -163,16 +160,10 @@ class TodoService:
         if target is todo.status:
             return
 
-        if (
-            todo.status is TodoStatus.CANCELLED
-            and target is not TodoStatus.TODO
-        ):
+        if todo.status is TodoStatus.CANCELLED and target is not TodoStatus.TODO:
             raise TodoStateConflictError()
 
-        if (
-            todo.status is TodoStatus.DONE
-            and target is TodoStatus.CANCELLED
-        ):
+        if todo.status is TodoStatus.DONE and target is TodoStatus.CANCELLED:
             raise TodoStateConflictError()
 
         match target:

@@ -47,13 +47,13 @@ class RefreshSession(TimestampMixin, Base):
 
     def rotate(self, token_hash: str, expires_at: datetime, at: datetime | None = None) -> None:
         rotated_at = at or datetime.now(UTC)
-        
+
         if not self.is_active(rotated_at):
             raise ValueError("An inactive refresh session cannot be rotated.")
-        
+
         self.previous_token_hash = self.token_hash
         self.token_hash = token_hash
-        
+
         self.expires_at = self.expires_at = min(expires_at, self.absolute_expires_at)
         self.last_used_at = rotated_at
         self.rotated_at = rotated_at

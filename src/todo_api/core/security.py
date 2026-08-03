@@ -22,6 +22,7 @@ from todo_api.schemas.token import (
 ACCESS_TOKEN_CLAIMS = ("sub", "exp", "iat", "jti", "iss", "aud", "type")
 REFRESH_TOKEN_CLAIMS = (*ACCESS_TOKEN_CLAIMS, "sid")
 API_KEY_HEADER = "X-API-Key"
+CSRF_TOKEN_HEADER = "X-CSRF-Token"
 
 _PASSWORD_HASHER = PasswordHash.recommended()
 _TOKEN_BYTES = 32
@@ -45,6 +46,15 @@ DUMMY_PASSWORD_HASH = hash_password("dummy-password-for-timing-protection")
 
 def hash_secret(value: str) -> str:
     return sha256(value.encode()).hexdigest()
+
+
+def verify_csrf_token(header_token: str | None, cookie_token: str | None) -> bool:
+    """Compare double-submit CSRF tokens in constant time."""
+
+    if not header_token or not cookie_token:
+        return False
+
+    return secrets.compare_digest(header_token, cookie_token)
 
 
 def generate_api_key() -> str:
@@ -110,20 +120,13 @@ def _bounded_lifetime(
     if absolute_expires_at is None:
         return lifetime
 
-    if (
-        absolute_expires_at.tzinfo is None
-        or absolute_expires_at.utcoffset() is None
-    ):
-        raise ValueError(
-            f"{name} absolute expiration must be timezone-aware."
-        )
+    if absolute_expires_at.tzinfo is None or absolute_expires_at.utcoffset() is None:
+        raise ValueError(f"{name} absolute expiration must be timezone-aware.")
 
     remaining = absolute_expires_at - issued_at
 
     if remaining <= timedelta(0):
-        raise ValueError(
-            f"{name} absolute expiration must be in the future."
-        )
+        raise ValueError(f"{name} absolute expiration must be in the future.")
 
     return min(lifetime, remaining)
 
@@ -177,29 +180,29 @@ def create_refresh_token(
 
 
 def create_token_pair(
-    subject: str, 
-    session_id: str, 
+    subject: str,
+    session_id: str,
     settings: Settings,
     *,
     issued_at: datetime | None = None,
     absolute_expires_at: datetime | None = None,
 ) -> TokenResponseSchema:
     issued_at = issued_at or datetime.now(UTC)
-    
+
     access_lifetime = _bounded_lifetime(
         _access_token_lifetime(settings),
         issued_at=issued_at,
         absolute_expires_at=absolute_expires_at,
         name="Access token",
     )
-    
+
     refresh_lifetime = _bounded_lifetime(
         _refresh_token_lifetime(settings),
         issued_at=issued_at,
         absolute_expires_at=absolute_expires_at,
         name="Refresh token",
     )
-    
+
     return TokenResponseSchema(
         access_token=create_access_token(
             subject,
