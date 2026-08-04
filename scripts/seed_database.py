@@ -10,10 +10,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from faker import Faker
+from pydantic import SecretStr
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from todo_api.core.config import get_settings
+from todo_api.core.config import Settings, get_settings
 from todo_api.db.session import create_database
 from todo_api.models import (
     APIKey,
@@ -89,12 +90,13 @@ async def create_users(
     auth_service = AuthService(session=session, settings=settings)
     users: list[User] = []
     inactive_user_ids: list[int] = []
+    password = SecretStr(options.password)
 
     for index in range(1, options.users + 1):
         payload = UserCreateSchema(
             email=seed_email(options.seed, index),
             full_name=fake.name(),
-            password=options.password,
+            password=password,
         )
 
         user = await auth_service.register(

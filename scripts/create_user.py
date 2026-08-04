@@ -4,14 +4,16 @@ import argparse
 import asyncio
 import secrets
 
+from pydantic import SecretStr
+
 from todo_api.core.config import get_settings
 from todo_api.db.session import create_database
 from todo_api.schemas.user import UserCreateSchema
 from todo_api.services.auth import AuthService
 
 
-def generate_password() -> str:
-    return secrets.token_urlsafe(18)
+def generate_password() -> SecretStr:
+     return SecretStr(secrets.token_urlsafe(18))
 
 
 async def create_user(
@@ -31,7 +33,7 @@ async def create_user(
             user = await auth_service.register(payload, is_superuser=superuser)
 
             print(f"Created user: {user.email}")
-            print(f"Password (shown once): {password}")
+            print(f"Password (shown once): {password.get_secret_value()}")
     finally:
         await database.dispose()
 
