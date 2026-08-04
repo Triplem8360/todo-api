@@ -2,32 +2,52 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from getpass import getpass
+import secrets
+
+from pydantic import SecretStr
 
 from todo_api.core.config import get_settings
 from todo_api.db.session import create_database
 from todo_api.schemas.user import UserCreateSchema
-from todo_api.services.auth import register_user
+from todo_api.services.auth import AuthService
 
 
-async def create_user(email: str, full_name: str | None, superuser: bool) -> None:
-    payload = UserCreateSchema(email=email, full_name=full_name, password=getpass())
-    database = create_database(get_settings())
+def generate_password() -> SecretStr:
+     return SecretStr(secrets.token_urlsafe(18))
+
+
+async def create_user(
+    email: str,
+    full_name: str | None,
+    superuser: bool,
+) -> None:
+    settings = get_settings()
+    database = create_database(settings)
+    password = generate_password()
+
     try:
         async with database.session_factory() as session:
-            user = await register_user(session, payload, is_superuser=superuser)
+            auth_service = AuthService(session=session, settings=settings)
+
+            payload = UserCreateSchema(email=email, full_name=full_name, password=password)
+            user = await auth_service.register(payload, is_superuser=superuser)
+
             print(f"Created user: {user.email}")
+            print(f"Password (shown once): {password.get_secret_value()}")
     finally:
         await database.dispose()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create a user interactively.")
+    parser = argparse.ArgumentParser(
+        description="Create a user with an automatically generated password.",
+    )
     parser.add_argument("--email", required=True)
     parser.add_argument("--full-name")
     parser.add_argument("--superuser", action="store_true")
     args = parser.parse_args()
-    asyncio.run(create_user(args.email, args.full_name, args.superuser))
+
+    asyncio.run(create_user(email=args.email, full_name=args.full_name, superuser=args.superuser))
 
 
 if __name__ == "__main__":
