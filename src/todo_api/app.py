@@ -19,6 +19,7 @@ from todo_api.observability.metrics import (
     metrics_endpoint,
 )
 from todo_api.observability.middleware import HTTPMetricsMiddleware
+from todo_api.observability.request_context import RequestContextMiddleware
 
 
 def create_app(
@@ -59,6 +60,7 @@ def create_app(
         metrics=metrics,
         metrics_path=settings.metrics_path,
     )
+    app.add_middleware(RequestContextMiddleware)
     app.add_api_route(
         settings.metrics_path,
         metrics_endpoint,
