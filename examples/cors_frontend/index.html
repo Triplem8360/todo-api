@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Todo API CORS Demo</title>
+
+    <style>
+        :root {
+            font-family: system-ui, sans-serif;
+            color-scheme: light dark;
+        }
+
+        body {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        form,
+        section {
+            margin-bottom: 24px;
+            padding: 20px;
+            border: 1px solid #8885;
+            border-radius: 12px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 4px;
+            padding: 10px;
+        }
+
+        button {
+            margin: 4px;
+            padding: 10px 16px;
+            cursor: pointer;
+        }
+
+        pre {
+            min-height: 140px;
+            padding: 16px;
+            overflow: auto;
+            white-space: pre-wrap;
+            border-radius: 8px;
+            background: #8882;
+        }
+
+        .metadata {
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Todo API CORS Demo</h1>
+
+    <p>
+        Frontend origin:
+        <strong id="frontend-origin"></strong>
+    </p>
+
+    <p>
+        Backend origin:
+        <strong>http://localhost:8000</strong>
+    </p>
+
+    <section>
+        <h2>Public requests</h2>
+
+        <button id="health-button" type="button">
+            Health
+        </button>
+
+        <button id="docs-button" type="button">
+            OpenAPI schema
+        </button>
+    </section>
+
+    <form id="login-form">
+        <h2>Browser login</h2>
+
+        <label>
+            Email
+            <input
+                id="username"
+                name="username"
+                type="email"
+                required
+                autocomplete="username"
+            >
+        </label>
+
+        <label>
+            Password
+            <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                autocomplete="current-password"
+            >
+        </label>
+
+        <button type="submit">
+            Login
+        </button>
+    </form>
+
+    <section>
+        <h2>Authenticated requests</h2>
+
+        <button id="profile-button" type="button">
+            Current user
+        </button>
+
+        <button id="todos-button" type="button">
+            List todos
+        </button>
+
+        <button id="refresh-button" type="button">
+            Refresh session
+        </button>
+
+        <button id="logout-button" type="button">
+            Logout
+        </button>
+    </section>
+
+    <section>
+        <h2>Response metadata</h2>
+        <div id="metadata" class="metadata">No request yet.</div>
+    </section>
+
+    <section>
+        <h2>Response</h2>
+        <pre id="output">No request yet.</pre>
+    </section>
+
+    <script src="./app.js"></script>
+</body>
+</html>

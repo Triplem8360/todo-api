@@ -11,6 +11,7 @@ from todo_api import __version__
 from todo_api.api.exception_handlers import register_exception_handlers
 from todo_api.api.v1.router import api_router
 from todo_api.core.config import Settings, get_settings
+from todo_api.core.cors import register_cors_middleware
 from todo_api.db.session import Database, create_database
 from todo_api.observability.database import install_database_metrics
 from todo_api.observability.metrics import (
@@ -61,6 +62,7 @@ def create_app(
         metrics_path=settings.metrics_path,
     )
     app.add_middleware(RequestContextMiddleware)
+    register_cors_middleware(app, settings=settings)
     app.add_api_route(
         settings.metrics_path,
         metrics_endpoint,

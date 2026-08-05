@@ -9,11 +9,14 @@ from todo_api.api.deps import (
     CurrentBearerUser,
     TodoServiceDep,
     require_csrf_token,
+    validate_request_origin,
 )
 from todo_api.api.responses import error_response
 from todo_api.exceptions.auth import (
     InactiveUserError,
     InvalidAccessTokenError,
+    InvalidCSRFTokenError,
+    RequestOriginNotAllowedError,
 )
 from todo_api.exceptions.todo import (
     TodoNotFoundError,
@@ -34,16 +37,36 @@ router = APIRouter(prefix="/todos", tags=["Todos"])
 TodoId = Annotated[int, Path(gt=0)]
 TodoQuery = Annotated[TodoListQuerySchema, Query()]
 
+
+_UNAUTHORIZED_RESPONSE = error_response(
+    InvalidAccessTokenError,
+    description="Access token is invalid or expired.",
+    authenticate="Bearer",
+)
+
+_AUTH_FORBIDDEN_RESPONSE = error_response(
+    InactiveUserError,
+    description="The authenticated user is not allowed to access this resource.",
+)
+
+_BROWSER_WRITE_FORBIDDEN_RESPONSE = error_response(
+    InactiveUserError,
+    InvalidCSRFTokenError,
+    RequestOriginNotAllowedError,
+    description=(
+        "The browser request was rejected because the account is inactive, "
+        "the CSRF token is invalid, or the request origin is not allowed."
+    ),
+)
+
 _AUTH_RESPONSES: dict[int | str, dict[str, Any]] = {
-    status.HTTP_401_UNAUTHORIZED: error_response(
-        InvalidAccessTokenError,
-        description="Access token is invalid.",
-        authenticate="Bearer",
-    ),
-    status.HTTP_403_FORBIDDEN: error_response(
-        InactiveUserError,
-        description="Account is inactive.",
-    ),
+    status.HTTP_401_UNAUTHORIZED: _UNAUTHORIZED_RESPONSE,
+    status.HTTP_403_FORBIDDEN: _AUTH_FORBIDDEN_RESPONSE,
+}
+
+_BROWSER_WRITE_AUTH_RESPONSES: dict[int | str, dict[str, Any]] = {
+    status.HTTP_401_UNAUTHORIZED: _UNAUTHORIZED_RESPONSE,
+    status.HTTP_403_FORBIDDEN: _BROWSER_WRITE_FORBIDDEN_RESPONSE,
 }
 
 _UNAVAILABLE_RESPONSE = error_response(
@@ -51,16 +74,21 @@ _UNAVAILABLE_RESPONSE = error_response(
     description="Todo service is unavailable.",
 )
 
+_BROWSER_WRITE_DEPENDENCIES = [
+    Depends(validate_request_origin),
+    Depends(require_csrf_token),
+]
+
 
 @router.post(
     "",
     response_model=TodoResponseSchema,
     status_code=status.HTTP_201_CREATED,
     responses={
-        **_AUTH_RESPONSES,
+        **_BROWSER_WRITE_AUTH_RESPONSES,
         status.HTTP_503_SERVICE_UNAVAILABLE: _UNAVAILABLE_RESPONSE,
     },
-    dependencies=[Depends(require_csrf_token)],
+    dependencies=_BROWSER_WRITE_DEPENDENCIES,
 )
 async def create_todo(
     payload: TodoCreateSchema,
@@ -111,7 +139,7 @@ async def get_todo(
     "/{todo_id}",
     response_model=TodoResponseSchema,
     responses={
-        **_AUTH_RESPONSES,
+        **_BROWSER_WRITE_AUTH_RESPONSES,
         status.HTTP_404_NOT_FOUND: error_response(
             TodoNotFoundError,
             description="Todo does not exist.",
@@ -122,7 +150,7 @@ async def get_todo(
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: _UNAVAILABLE_RESPONSE,
     },
-    dependencies=[Depends(require_csrf_token)],
+    dependencies=_BROWSER_WRITE_DEPENDENCIES,
 )
 async def update_todo(
     todo_id: TodoId,
@@ -137,13 +165,14 @@ async def update_todo(
     "/{todo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
-        **_AUTH_RESPONSES,
+        **_BROWSER_WRITE_AUTH_RESPONSES,
         status.HTTP_404_NOT_FOUND: error_response(
             TodoNotFoundError,
             description="Todo does not exist.",
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: _UNAVAILABLE_RESPONSE,
     },
+    dependencies=_BROWSER_WRITE_DEPENDENCIES,
 )
 async def remove_todo(
     todo_id: TodoId,

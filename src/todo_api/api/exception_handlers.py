@@ -18,10 +18,11 @@ from todo_api.exceptions.auth import (
     InactiveUserError,
     InvalidAccessTokenError,
     InvalidBasicCredentialsError,
-    InvalidCSRFTokenError,
     InvalidCredentialsError,
+    InvalidCSRFTokenError,
     InvalidRefreshTokenError,
     RegistrationUnavailableError,
+    RequestOriginNotAllowedError,
 )
 from todo_api.exceptions.base import ApplicationError
 from todo_api.exceptions.oauth import (
@@ -48,6 +49,7 @@ ERROR_CONFIG: dict[type[ApplicationError], ErrorConfig] = {
     InvalidAccessTokenError: ErrorConfig(status.HTTP_401_UNAUTHORIZED, "Bearer"),
     InvalidRefreshTokenError: ErrorConfig(status.HTTP_401_UNAUTHORIZED, "Bearer"),
     InvalidCSRFTokenError: ErrorConfig(status.HTTP_403_FORBIDDEN),
+    RequestOriginNotAllowedError: ErrorConfig(status.HTTP_403_FORBIDDEN),
     APIKeyRequiredError: ErrorConfig(status.HTTP_401_UNAUTHORIZED, "APIKey"),
     InvalidAPIKeyError: ErrorConfig(status.HTTP_401_UNAUTHORIZED, "APIKey"),
     InactiveUserError: ErrorConfig(status.HTTP_403_FORBIDDEN),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated, TypeAlias
+from urllib.parse import urlsplit
 
 from anyio import to_thread
 from fastapi import Depends, Request, Security
@@ -24,6 +25,7 @@ from todo_api.core.cookies import (
     ACCESS_COOKIE_NAME,
     CSRF_COOKIE_NAME,
     REFRESH_COOKIE_NAME,
+    SAFE_METHODS,
 )
 from todo_api.core.security import (
     API_KEY_HEADER,
@@ -46,6 +48,7 @@ from todo_api.exceptions.auth import (
     InvalidAccessTokenError,
     InvalidBasicCredentialsError,
     InvalidCSRFTokenError,
+    RequestOriginNotAllowedError,
     TokenAuthenticationUnavailableError,
 )
 from todo_api.models.user import User
@@ -63,6 +66,11 @@ ACCESS_TOKEN_AUTH = "access_token"
 BASIC_AUTH = "basic"
 HEADER_API_KEY_AUTH = "api_key_header"
 QUERY_API_KEY_AUTH = "api_key_query"
+
+_BROWSER_SESSION_COOKIE_NAMES = (
+    ACCESS_COOKIE_NAME,
+    REFRESH_COOKIE_NAME,
+)
 
 
 # Security transports.
@@ -325,6 +333,43 @@ def get_todo_service(session: DbSession) -> TodoService:
 
 def get_user_service(session: DbSession) -> UserService:
     return UserService(session=session)
+
+
+def _extract_origin(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    parsed = urlsplit(value.strip())
+
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def validate_request_origin(request: Request) -> None:
+    """Reject unsafe browser requests from untrusted origins."""
+
+    if request.method.upper() in SAFE_METHODS:
+        return
+
+    settings: Settings = request.app.state.settings
+    origin = _extract_origin(request.headers.get("origin"))
+
+    if origin is None:
+        uses_browser_session = any(
+            name in request.cookies
+            for name in _BROWSER_SESSION_COOKIE_NAMES
+        )
+
+        if not uses_browser_session:
+            # Allow Bearer, Basic, and API-key clients without Origin.
+            return
+
+        origin = _extract_origin(request.headers.get("referer"))
+
+    if origin not in settings.cors_allowed_origins:
+        raise RequestOriginNotAllowedError
 
 
 def _has_explicit_bearer_token(request: Request) -> bool:
