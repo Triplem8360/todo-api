@@ -16,6 +16,8 @@ CSRF_HEADER_NAME = "X-CSRF-Token"
 
 API_COOKIE_PATH = "/api/v1"
 BROWSER_AUTH_COOKIE_PATH = "/api/v1/auth/browser"
+CSRF_COOKIE_PATH = "/"
+
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 
@@ -57,7 +59,7 @@ def set_browser_session_cookies(
         secrets.token_urlsafe(32),
         max_age=refresh_max_age,
         expires=refresh_expires_at,
-        path=API_COOKIE_PATH,
+        path=CSRF_COOKIE_PATH,
         secure=settings.auth_cookie_secure,
         httponly=False,
         samesite=settings.auth_cookie_samesite,
@@ -83,7 +85,7 @@ def clear_browser_session_cookies(response: Response, settings: Settings) -> Non
     )
     response.delete_cookie(
         CSRF_COOKIE_NAME,
-        path=API_COOKIE_PATH,
+        path=CSRF_COOKIE_PATH,
         secure=settings.auth_cookie_secure,
         httponly=False,
         samesite=settings.auth_cookie_samesite,
