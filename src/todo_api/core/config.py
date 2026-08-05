@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     )
     app_debug: bool = Field(default=False, validation_alias="APP_DEBUG")
 
+    allowed_hosts: tuple[str, ...] = Field(
+        default=("localhost", "127.0.0.1", "testserver"),
+        min_length=1,
+        validation_alias="ALLOWED_HOSTS",
+    )
+    
     cors_allowed_origins: tuple[str, ...] = Field( 
         default=("http://localhost:5500",), 
         validation_alias="CORS_ALLOWED_ORIGINS",
@@ -143,6 +149,41 @@ class Settings(BaseSettings):
     )
 
     metrics_path: str = Field(default="/metrics", validation_alias="METRICS_PATH")
+
+    @field_validator("allowed_hosts")
+    @classmethod
+    def validate_allowed_hosts(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        validated: list[str] = []
+        seen: set[str] = set()
+
+        for raw_host in values:
+            host = raw_host.strip().casefold()
+
+            if not host:
+                raise ValueError("ALLOWED_HOSTS must not contain empty values.")
+
+            if host == "*":
+                raise ValueError("ALLOWED_HOSTS must not contain '*'. Configure trusted hosts explicitly.")
+
+            if (
+                "://" in host
+                or "/" in host
+                or "?" in host
+                or "#" in host
+                or ":" in host
+            ):
+                raise ValueError("Each allowed host must be a hostname without a scheme, path, query, fragment, or port.")
+
+            if "*" in host and not (host.startswith("*.") and host.count("*") == 1):
+                raise ValueError("Wildcard hosts must use the '*.example.com' format.")
+
+            if host in seen:
+                raise ValueError(f"Duplicate allowed host configured: {host}")
+
+            seen.add(host)
+            validated.append(host)
+
+        return tuple(validated)
 
     @field_validator("cors_allowed_origins") 
     @classmethod 
