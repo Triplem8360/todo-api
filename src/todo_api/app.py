@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from starlette.responses import JSONResponse
 
@@ -33,6 +34,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await db.ping(settings.db_healthcheck_timeout_seconds)
+
         try:
             yield
         finally:
@@ -45,17 +47,28 @@ def create_app(
         lifespan=lifespan,
         swagger_ui_init_oauth={
             "clientId": settings.oauth2_public_client_id,
-            "appName": "Todo API Swagger UI",
+            "appName": f"{settings.app_name} Swagger UI",
             "usePkceWithAuthorizationCodeGrant": True,
             "useBasicAuthenticationWithAccessCodeGrant": False,
         },
     )
+
     app.state.settings = settings
     app.state.database = db
     app.state.metrics = metrics
 
     configure_build_info(version=__version__, environment=settings.app_env)
     install_database_metrics(db.engine, metrics)
+
+    # Starlette executes user middleware in reverse registration order.
+    #
+    # Effective request order:
+    #
+    # TrustedHostMiddleware
+    #   -> CORSMiddleware
+    #       -> RequestContextMiddleware
+    #           -> HTTPMetricsMiddleware
+    #               -> FastAPI
     app.add_middleware(
         HTTPMetricsMiddleware,
         metrics=metrics,
@@ -63,6 +76,12 @@ def create_app(
     )
     app.add_middleware(RequestContextMiddleware)
     register_cors_middleware(app, settings=settings)
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=list(settings.allowed_hosts),
+        www_redirect=False,
+    )
+
     app.add_api_route(
         settings.metrics_path,
         metrics_endpoint,
@@ -76,7 +95,9 @@ def create_app(
         request: Request, exc: SQLAlchemyTimeoutError
     ) -> JSONResponse:
         del request, exc
+
         metrics.db_pool_timeouts_total.inc()
+
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
@@ -86,4 +107,5 @@ def create_app(
         )
 
     register_exception_handlers(app)
+
     return app
