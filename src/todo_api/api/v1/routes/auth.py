@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from todo_api.api.deps import AuthServiceDep, require_browser_csrf_token
 from todo_api.api.responses import error_response
+from todo_api.background.request_tasks import record_activity
 from todo_api.core.cookies import (
     REFRESH_COOKIE_NAME,
     clear_browser_session_cookies,
@@ -61,9 +62,17 @@ def _authentication_failure_outcome(error: AuthServiceError) -> str:
 async def register(
     payload: UserCreateSchema,
     service: AuthServiceDep,
+    background_tasks: BackgroundTasks,
 ) -> User:
     user = await service.register(payload)
     record_registration("success")
+    background_tasks.add_task(
+        record_activity,
+        "user.registered",
+        user_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+    )
     return user
 
 

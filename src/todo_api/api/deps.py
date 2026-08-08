@@ -358,8 +358,7 @@ def validate_request_origin(request: Request) -> None:
 
     if origin is None:
         uses_browser_session = any(
-            name in request.cookies
-            for name in _BROWSER_SESSION_COOKIE_NAMES
+            name in request.cookies for name in _BROWSER_SESSION_COOKIE_NAMES
         )
 
         if not uses_browser_session:

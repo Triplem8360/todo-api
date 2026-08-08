@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Path, Query, Response, status
 
 from todo_api.api.deps import APIKeyServiceDep, CurrentUser
 from todo_api.api.responses import error_response
+from todo_api.background.request_tasks import record_activity
 from todo_api.exceptions.api_key import (
     APIKeyCreationUnavailableError,
     APIKeyListUnavailableError,
@@ -76,6 +77,14 @@ async def delete_api_key(
     service: APIKeyServiceDep,
     current_user: CurrentUser,
     api_key_id: Annotated[int, Path(gt=0)],
+    background_tasks: BackgroundTasks,
 ) -> Response:
     await service.revoke(user_id=current_user.id, api_key_id=api_key_id)
+    background_tasks.add_task(
+        record_activity,
+        "api_key.revoked",
+        user_id=current_user.id,
+        resource_type="api_key",
+        resource_id=api_key_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

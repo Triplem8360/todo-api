@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, BackgroundTasks, Response, status
 
 from todo_api.api.deps import (
     CurrentAuthorizationCodeUser,
@@ -11,6 +11,7 @@ from todo_api.api.deps import (
     UserServiceDep,
 )
 from todo_api.api.responses import error_response
+from todo_api.background.request_tasks import record_activity
 from todo_api.exceptions.user import (
     AccountDeactivationUnavailableError,
     ProfileUpdateUnavailableError,
@@ -65,8 +66,17 @@ async def update_current_user(
 async def deactivate_current_user(
     service: UserServiceDep,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> Response:
+    user_id = current_user.id
     await service.deactivate_account(current_user)
+    background_tasks.add_task(
+        record_activity,
+        "user.deactivated",
+        user_id=user_id,
+        resource_type="user",
+        resource_id=user_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

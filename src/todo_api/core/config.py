@@ -33,18 +33,18 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias="ALLOWED_HOSTS",
     )
-    
-    cors_allowed_origins: tuple[str, ...] = Field( 
-        default=("http://localhost:5500",), 
+
+    cors_allowed_origins: tuple[str, ...] = Field(
+        default=("http://localhost:5500",),
         validation_alias="CORS_ALLOWED_ORIGINS",
-    ) 
-    cors_max_age_seconds: int = Field( 
-        default=600, 
-        ge=0, 
-        le=86_400, 
+    )
+    cors_max_age_seconds: int = Field(
+        default=600,
+        ge=0,
+        le=86_400,
         validation_alias="CORS_MAX_AGE_SECONDS",
     )
-    
+
     database_url: str = Field(
         default="postgresql+asyncpg://todo:todo@localhost:5432/todo",
         validation_alias="DATABASE_URL",
@@ -163,16 +163,14 @@ class Settings(BaseSettings):
                 raise ValueError("ALLOWED_HOSTS must not contain empty values.")
 
             if host == "*":
-                raise ValueError("ALLOWED_HOSTS must not contain '*'. Configure trusted hosts explicitly.")
+                raise ValueError(
+                    "ALLOWED_HOSTS must not contain '*'. Configure trusted hosts explicitly."
+                )
 
-            if (
-                "://" in host
-                or "/" in host
-                or "?" in host
-                or "#" in host
-                or ":" in host
-            ):
-                raise ValueError("Each allowed host must be a hostname without a scheme, path, query, fragment, or port.")
+            if "://" in host or "/" in host or "?" in host or "#" in host or ":" in host:
+                raise ValueError(
+                    "Each allowed host must be a hostname without a scheme, path, query, fragment, or port."
+                )
 
             if "*" in host and not (host.startswith("*.") and host.count("*") == 1):
                 raise ValueError("Wildcard hosts must use the '*.example.com' format.")
@@ -185,50 +183,52 @@ class Settings(BaseSettings):
 
         return tuple(validated)
 
-    @field_validator("cors_allowed_origins") 
-    @classmethod 
-    def validate_cors_allowed_origins(cls, values: tuple[str, ...]) -> tuple[str, ...]: 
-        validated: list[str] = [] 
-        seen: set[str] = set() 
-        
-        for raw_origin in values: 
-            origin = raw_origin.strip() 
-            
-            if not origin: 
-                raise ValueError("CORS origins must not be empty.") 
-            
-            if origin == "*": 
-                raise ValueError("CORS_ALLOWED_ORIGINS cannot contain '*' when credentialed browser requests are enabled.") 
-            
-            parsed = urlsplit(origin) 
-            
-            if parsed.scheme not in {"http", "https"}: 
-                raise ValueError("Each CORS origin must use the http or https scheme.") 
-            
-            if not parsed.netloc: 
-                raise ValueError("Each CORS origin must include a host.") 
-            
-            if parsed.username is not None or parsed.password is not None: 
-                raise ValueError("CORS origins must not include user information.") 
-            
-            if parsed.path not in {"", "/"}: 
-                raise ValueError("CORS origins must not include a path.") 
-            
-            if parsed.query: 
-                raise ValueError("CORS origins must not include a query string.") 
-            
-            if parsed.fragment: 
-                raise ValueError("CORS origins must not include a fragment.") 
-            
-            normalized = (f"{parsed.scheme.casefold()}://{parsed.netloc.casefold()}") 
-            if normalized in seen: 
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        validated: list[str] = []
+        seen: set[str] = set()
+
+        for raw_origin in values:
+            origin = raw_origin.strip()
+
+            if not origin:
+                raise ValueError("CORS origins must not be empty.")
+
+            if origin == "*":
+                raise ValueError(
+                    "CORS_ALLOWED_ORIGINS cannot contain '*' when credentialed browser requests are enabled."
+                )
+
+            parsed = urlsplit(origin)
+
+            if parsed.scheme not in {"http", "https"}:
+                raise ValueError("Each CORS origin must use the http or https scheme.")
+
+            if not parsed.netloc:
+                raise ValueError("Each CORS origin must include a host.")
+
+            if parsed.username is not None or parsed.password is not None:
+                raise ValueError("CORS origins must not include user information.")
+
+            if parsed.path not in {"", "/"}:
+                raise ValueError("CORS origins must not include a path.")
+
+            if parsed.query:
+                raise ValueError("CORS origins must not include a query string.")
+
+            if parsed.fragment:
+                raise ValueError("CORS origins must not include a fragment.")
+
+            normalized = f"{parsed.scheme.casefold()}://{parsed.netloc.casefold()}"
+            if normalized in seen:
                 raise ValueError(f"Duplicate CORS origin configured: {normalized}")
-            
-            seen.add(normalized) 
-            validated.append(normalized) 
-            
+
+            seen.add(normalized)
+            validated.append(normalized)
+
         return tuple(validated)
-    
+
     @field_validator("database_url")
     @classmethod
     def require_async_postgresql_url(cls, value: str) -> str:
@@ -288,16 +288,18 @@ class Settings(BaseSettings):
             normalized = secret.strip().casefold()
             if len(set(normalized)) < 8 or normalized.startswith("change-this"):
                 raise ValueError("SECRET_KEY must be a strong, randomly generated value.")
-            
+
             if not self.auth_cookie_secure:
                 raise ValueError("AUTH_COOKIE_SECURE must be enabled in staging and production.")
-            
+
             for origin in self.cors_allowed_origins:
                 parsed = urlsplit(origin)
 
                 if parsed.scheme != "https":
-                    raise ValueError("CORS_ALLOWED_ORIGINS must use HTTPS in staging and production.")
-                
+                    raise ValueError(
+                        "CORS_ALLOWED_ORIGINS must use HTTPS in staging and production."
+                    )
+
         return self
 
 
