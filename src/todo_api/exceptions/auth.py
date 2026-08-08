@@ -52,6 +52,7 @@ class InvalidCSRFTokenError(AuthServiceError):
     error_code = "invalid_csrf_token"
     public_message = "CSRF token is missing or invalid."
 
+
 class RequestOriginNotAllowedError(AuthServiceError):
     error_code = "request_origin_not_allowed"
     public_message = "Request origin is not allowed."

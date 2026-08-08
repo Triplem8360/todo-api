@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Response, status
 
 from todo_api.api.deps import (
     CurrentAuthorizationCodeUser,
@@ -12,6 +12,7 @@ from todo_api.api.deps import (
     validate_request_origin,
 )
 from todo_api.api.responses import error_response
+from todo_api.background.request_tasks import record_activity
 from todo_api.exceptions.auth import (
     InactiveUserError,
     InvalidAccessTokenError,
@@ -94,8 +95,21 @@ async def create_todo(
     payload: TodoCreateSchema,
     service: TodoServiceDep,
     current_user: CurrentBearerUser,
+    background_tasks: BackgroundTasks,
 ) -> Todo:
-    return await service.create(current_user.id, payload)
+    todo = await service.create(current_user.id, payload)
+    background_tasks.add_task(
+        record_activity,
+        "todo.created",
+        user_id=current_user.id,
+        resource_type="todo",
+        resource_id=todo.id,
+        metadata={
+            "priority": todo.priority.value,
+            "has_due_date": todo.due_at is not None,
+        },
+    )
+    return todo
 
 
 @router.get(
@@ -157,8 +171,20 @@ async def update_todo(
     payload: TodoUpdateSchema,
     service: TodoServiceDep,
     current_user: CurrentBearerUser,
+    background_tasks: BackgroundTasks,
 ) -> Todo:
-    return await service.update(current_user.id, todo_id, payload)
+    todo = await service.update(current_user.id, todo_id, payload)
+    background_tasks.add_task(
+        record_activity,
+        "todo.updated",
+        user_id=current_user.id,
+        resource_type="todo",
+        resource_id=todo.id,
+        metadata={
+            "status": todo.status.value,
+        },
+    )
+    return todo
 
 
 @router.delete(
@@ -178,6 +204,14 @@ async def remove_todo(
     todo_id: TodoId,
     service: TodoServiceDep,
     current_user: CurrentBearerUser,
+    background_tasks: BackgroundTasks,
 ) -> Response:
     await service.delete(current_user.id, todo_id)
+    background_tasks.add_task(
+        record_activity,
+        "todo.deleted",
+        user_id=current_user.id,
+        resource_type="todo",
+        resource_id=todo_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

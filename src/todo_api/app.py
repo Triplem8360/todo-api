@@ -11,6 +11,7 @@ from starlette.responses import JSONResponse
 from todo_api import __version__
 from todo_api.api.exception_handlers import register_exception_handlers
 from todo_api.api.v1.router import api_router
+from todo_api.background.scheduler import create_scheduler
 from todo_api.core.config import Settings, get_settings
 from todo_api.core.cors import register_cors_middleware
 from todo_api.db.session import Database, create_database
@@ -35,9 +36,14 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await db.ping(settings.db_healthcheck_timeout_seconds)
 
+        scheduler = create_scheduler(db)
+        app.state.scheduler = scheduler
+        scheduler.start()
+
         try:
             yield
         finally:
+            scheduler.shutdown(wait=False)
             await db.dispose()
 
     app = FastAPI(

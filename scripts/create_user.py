@@ -13,7 +13,7 @@ from todo_api.services.auth import AuthService
 
 
 def generate_password() -> SecretStr:
-     return SecretStr(secrets.token_urlsafe(18))
+    return SecretStr(secrets.token_urlsafe(18))
 
 
 async def create_user(

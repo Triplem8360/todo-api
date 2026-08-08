@@ -105,7 +105,6 @@ class TodoService:
         payload: TodoUpdateSchema,
     ) -> Todo:
         try:
-            print("$$$$$$$$", payload)
             todo = await get_owned_todo(
                 self.session,
                 user_id=user_id,
