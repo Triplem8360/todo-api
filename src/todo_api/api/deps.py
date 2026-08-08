@@ -368,7 +368,15 @@ def validate_request_origin(request: Request) -> None:
 
         origin = _extract_origin(request.headers.get("referer"))
 
-    if origin not in settings.cors_allowed_origins:
+    # Trust requests originating from this API itself.
+    request_origin = f"{request.url.scheme}://{request.url.netloc}"
+
+    allowed_origins = {
+        *settings.cors_allowed_origins,
+        request_origin,
+    }
+
+    if origin not in allowed_origins:
         raise RequestOriginNotAllowedError
 
 
