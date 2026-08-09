@@ -12,6 +12,11 @@ from todo_api import __version__
 from todo_api.api.exception_handlers import register_exception_handlers
 from todo_api.api.v1.router import api_router
 from todo_api.background.scheduler import create_scheduler
+from todo_api.core.cache import (
+    PrivateCacheHeadersMiddleware,
+    close_cache,
+    initialize_cache,
+)
 from todo_api.core.config import Settings, get_settings
 from todo_api.core.cors import register_cors_middleware
 from todo_api.db.session import Database, create_database
@@ -39,12 +44,16 @@ def create_app(
         scheduler = create_scheduler(db)
         app.state.scheduler = scheduler
         scheduler.start()
+        initialize_cache(settings)
 
         try:
             yield
         finally:
             scheduler.shutdown(wait=False)
-            await db.dispose()
+            try:
+                await close_cache()
+            finally:
+                await db.dispose()
 
     app = FastAPI(
         title=settings.app_name,
@@ -74,7 +83,9 @@ def create_app(
     #   -> CORSMiddleware
     #       -> RequestContextMiddleware
     #           -> HTTPMetricsMiddleware
-    #               -> FastAPI
+    #               -> PrivateCacheHeadersMiddleware
+    #                   -> FastAPI
+    app.add_middleware(PrivateCacheHeadersMiddleware)
     app.add_middleware(
         HTTPMetricsMiddleware,
         metrics=metrics,

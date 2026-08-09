@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Response, status
+from fastapi_cache.decorator import cache
 
 from todo_api.api.deps import (
     CurrentAuthorizationCodeUser,
@@ -13,6 +14,11 @@ from todo_api.api.deps import (
 )
 from todo_api.api.responses import error_response
 from todo_api.background.request_tasks import record_activity
+from todo_api.core.cache import (
+    TODO_CACHE_NAMESPACE,
+    invalidate_todo_cache,
+    todo_cache_key_builder,
+)
 from todo_api.exceptions.auth import (
     InactiveUserError,
     InvalidAccessTokenError,
@@ -98,6 +104,7 @@ async def create_todo(
     background_tasks: BackgroundTasks,
 ) -> Todo:
     todo = await service.create(current_user.id, payload)
+    await invalidate_todo_cache(current_user.id)
     background_tasks.add_task(
         record_activity,
         "todo.created",
@@ -120,6 +127,7 @@ async def create_todo(
         status.HTTP_503_SERVICE_UNAVAILABLE: _UNAVAILABLE_RESPONSE,
     },
 )
+@cache(namespace=TODO_CACHE_NAMESPACE, key_builder=todo_cache_key_builder)
 async def list_todos(
     query: TodoQuery,
     service: TodoServiceDep,
@@ -141,12 +149,14 @@ async def list_todos(
     },
     dependencies=[Depends(require_csrf_token)],
 )
+@cache(namespace=TODO_CACHE_NAMESPACE, key_builder=todo_cache_key_builder)
 async def get_todo(
     todo_id: TodoId,
     service: TodoServiceDep,
     current_user: CurrentBearerUser,
-) -> Todo:
-    return await service.get(current_user.id, todo_id)
+) -> TodoResponseSchema:
+    todo = await service.get(current_user.id, todo_id)
+    return TodoResponseSchema.model_validate(todo)
 
 
 @router.patch(
@@ -174,6 +184,7 @@ async def update_todo(
     background_tasks: BackgroundTasks,
 ) -> Todo:
     todo = await service.update(current_user.id, todo_id, payload)
+    await invalidate_todo_cache(current_user.id)
     background_tasks.add_task(
         record_activity,
         "todo.updated",
@@ -207,6 +218,7 @@ async def remove_todo(
     background_tasks: BackgroundTasks,
 ) -> Response:
     await service.delete(current_user.id, todo_id)
+    await invalidate_todo_cache(current_user.id)
     background_tasks.add_task(
         record_activity,
         "todo.deleted",
