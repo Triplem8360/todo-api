@@ -45,6 +45,15 @@ class Settings(BaseSettings):
         validation_alias="CORS_MAX_AGE_SECONDS",
     )
 
+    cache_enabled: bool = Field(default=True, validation_alias="CACHE_ENABLED")
+    cache_prefix: str = Field(default="todo-api", validation_alias="CACHE_PREFIX")
+    cache_ttl_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=3_600,
+        validation_alias="CACHE_TTL_SECONDS",
+    )
+
     database_url: str = Field(
         default="postgresql+asyncpg://todo:todo@localhost:5432/todo",
         validation_alias="DATABASE_URL",
