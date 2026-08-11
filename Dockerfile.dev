@@ -1,0 +1,114 @@
+# Use a lightweight Debian-based Python 3.11 image.
+FROM python:3.11-slim-bookworm
+
+
+# Copy the uv and uvx binaries directly from Astral's official uv image.
+# This avoids installing uv with pip or curl.
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
+
+
+# Allow the container user/group IDs to match the host user.
+# This helps prevent permission issues when using bind mounts on Linux.
+ARG DEV_UID=1000
+ARG DEV_GID=1000
+
+
+# Store the virtual environment outside /app.
+# This prevents a bind mount such as "$PWD:/app" from hiding the venv.
+#
+# Add the virtual environment binaries to PATH so commands such as
+# "uvicorn", "pytest", and "ruff" can be executed directly.
+#
+# PYTHONDONTWRITEBYTECODE:
+#   Prevent Python from creating __pycache__ and .pyc files.
+#
+# PYTHONUNBUFFERED:
+#   Send Python logs/output directly to stdout/stderr without buffering.
+#
+# UV_LINK_MODE=copy:
+#   Avoid hard-link issues between the uv cache and virtual environment
+#   when Docker cache mounts are used.
+#
+# UV_PYTHON_DOWNLOADS=0:
+#   Force uv to use the Python interpreter provided by the base image
+#   instead of downloading another Python version.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0
+
+
+# Create a non-root group and user for running the application.
+# Matching DEV_UID / DEV_GID with the host helps with bind-mounted files.
+RUN groupadd --gid "${DEV_GID}" app \
+    && useradd \
+    --uid "${DEV_UID}" \
+    --gid app \
+    --create-home \
+    --shell /bin/sh \
+    app
+
+
+# All following relative paths and commands run from /app.
+WORKDIR /app
+
+
+# Copy dependency metadata before application source code.
+#
+# Doing this separately improves Docker layer caching:
+# dependency installation is reused as long as pyproject.toml
+# and uv.lock do not change.
+COPY pyproject.toml uv.lock README.md ./
+
+
+# Install project dependencies and development dependencies.
+#
+# --mount=type=cache:
+#   Reuse uv's package cache between Docker builds.
+#
+# --locked:
+#   Require uv.lock to be up-to-date with pyproject.toml.
+#
+# --group dev:
+#   Install development dependencies such as pytest, ruff, etc.
+#
+# --no-install-project:
+#   Install dependencies only; do not install the todo_api project yet.
+#   This keeps the dependency layer cacheable when source code changes.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync \
+    --locked \
+    --group dev \
+    --no-install-project
+
+
+# Copy the rest of the project into the image.
+#
+# Files are owned by the non-root "app" user instead of root.
+COPY --chown=app:app . .
+
+
+# Now that the application source exists, install the project itself.
+#
+# Dependencies from the previous step are normally reused from cache,
+# so source-code-only changes do not require reinstalling everything.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync \
+    --locked \
+    --group dev
+
+
+# Run the application as a non-root user.
+USER app
+
+
+# Document that the application listens on port 8000.
+#
+# Note: EXPOSE does not publish the port by itself.
+# Use "-p 8000:8000" when running the container.
+EXPOSE 8000
+
+
+CMD ["uvicorn", "todo_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]

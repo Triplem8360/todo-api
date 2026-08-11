@@ -1,0 +1,91 @@
+name: todo-api
+
+x-app: &app
+  image: triplem/todo-api:dev
+
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+    args:
+      DEV_UID: ${HOST_UID:-1000}
+      DEV_GID: ${HOST_GID:-1000}
+
+  env_file:
+    - .env
+
+
+x-runtime-volumes: &runtime-volumes
+  - ./src:/app/src
+  - ./alembic:/app/alembic
+  - ./alembic.ini:/app/alembic.ini
+
+
+services:
+  db:
+    image: postgres:16-bookworm
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-todo_db}
+      POSTGRES_USER: ${POSTGRES_USER:-todo_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
+
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  migrate:
+    <<: *app
+
+    volumes: *runtime-volumes
+
+    command:
+      - alembic
+      - upgrade
+      - head
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    restart: "no"
+
+
+  api:
+    <<: *app
+
+    environment:
+      APP_DEBUG: "true"
+
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./scripts:/app/scripts
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+    init: true
+
+
+volumes:
+  postgres_data:

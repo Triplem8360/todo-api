@@ -636,6 +636,44 @@ GET /api/v1/todos/{todo_id}
 
 The Todo ID must be a positive integer.
 
+### Read caching
+
+The list and detail endpoints use a per-user, in-memory server cache. The response includes:
+
+```http
+X-FastAPI-Cache: MISS
+Cache-Control: private, no-store
+Vary: Authorization, Cookie
+```
+
+`MISS` means the Todo service was called and its result was stored. Repeating the same request
+for the same authenticated user and normalized query within the configured TTL returns:
+
+```http
+X-FastAPI-Cache: HIT
+```
+
+The `no-store` directive applies to the browser or HTTP intermediary, not the FastAPI cache.
+It ensures every browser request reaches the API and prevents authenticated Todo responses from
+being stored outside the process. A request carrying `Cache-Control: no-cache` or `no-store`
+bypasses the server cache for that request.
+
+Authentication still runs on cache hits. Only the Todo service and Todo repository queries are
+skipped. Successful create, update, and delete requests invalidate every cached Todo list and
+detail response belonging to the affected user.
+
+Caching is configured with:
+
+```env
+CACHE_ENABLED=true
+CACHE_PREFIX=todo-api
+CACHE_TTL_SECONDS=60
+```
+
+The backend belongs to one process. Multiple workers maintain separate values and cannot
+invalidate each other, so a shared backend is required when horizontally scaling with immediate
+cross-worker consistency.
+
 ### Update
 
 ```http

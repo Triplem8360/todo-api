@@ -4,8 +4,9 @@ The project uses a small layered architecture:
 
 ```text
 API routes -> dependencies -> services -> repositories -> models -> PostgreSQL
-                                |
-                                +-> core security and domain errors
+    |                           |
+    |                           +-> core security and domain errors
+    +-> per-user Todo read cache
 ```
 
 * Routes handle HTTP input, responses, error mapping, and metrics.
@@ -183,6 +184,38 @@ enumeration.
 
 Todo state rules, including completion timestamp handling, belong to the service layer rather
 than routes or database models.
+
+### Todo read cache
+
+`GET /todos` and `GET /todos/{todo_id}` use `fastapi-cache2` with a process-local in-memory
+backend. Authentication and request dependencies still execute on every request. A cache hit
+skips the Todo service and its owner-scoped Todo queries; it does not skip access-token or
+active-user validation.
+
+Each key contains the cache namespace, authenticated user ID, endpoint identity, and a SHA-256
+digest of the normalized list query or Todo ID. Tokens, cookies, database sessions, and service
+objects are deliberately excluded. This keeps keys stable across requests and prevents values
+from being shared between users.
+
+Successful create, update, and delete operations clear the complete Todo namespace for the
+affected user after the database commit. Invalidation is best-effort because a cache failure
+must not turn an already-committed write into an error response; the configured TTL bounds any
+remaining stale value.
+
+The application initializes and clears the cache with its lifespan. `CACHE_ENABLED` controls
+whether decorators use it, `CACHE_PREFIX` identifies application-owned entries, and
+`CACHE_TTL_SECONDS` controls entry lifetime. The default TTL is 60 seconds and validation
+permits values from 1 through 3600 seconds.
+
+Cached HTTP responses use `Cache-Control: private, no-store`. Browser and shared proxy caches
+therefore do not retain authenticated Todo data, while `X-FastAPI-Cache` reports the server-side
+`MISS` or `HIT`. Credential-based `Vary` headers provide additional protection.
+
+The memory backend is intentionally a first-stage deployment choice. Every application worker
+has an independent cache, and a mutation handled by one worker cannot invalidate another
+worker's entries. Run a single worker when immediate cache consistency is required. A future
+multi-worker deployment should replace the backend with a shared cache that supports namespace
+invalidation.
 
 ## API keys
 

@@ -9,6 +9,7 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 * sliding refresh expiration and a fixed session lifetime;
 * Argon2 password hashing and hashed API keys;
 * owner-scoped Todo CRUD, filtering, sorting, and pagination;
+* per-user in-memory caching for Todo reads;
 * Alembic migrations and Prometheus metrics.
 
 ## Run locally
@@ -24,6 +25,65 @@ uv run todo-api
 
 * OpenAPI: `http://localhost:8000/docs`
 * Metrics: `http://localhost:8000/metrics`
+
+## Run with Docker
+
+Requires Docker Engine with the Compose plugin. Create the local environment file once:
+
+```bash
+cp .env.example .env
+```
+
+The images can be built independently without starting containers:
+
+```bash
+docker build --file Dockerfile --tag todo-api:latest .
+docker build --file Dockerfile.dev --tag todo-api:dev .
+```
+
+The production image contains only runtime dependencies and runs as an unprivileged user. The
+development image includes the development dependency group and starts Uvicorn with reload.
+Use Compose for a runnable local stack because the API requires PostgreSQL during startup.
+
+Start the production-style image, PostgreSQL, and the one-shot migration service:
+
+```bash
+docker compose up --build
+```
+
+Compose waits for PostgreSQL to become healthy, applies Alembic migrations, and then starts
+one API worker at `http://localhost:8000`. Run it in the background with `-d` if preferred.
+
+For development with source mounts and Uvicorn reload, combine the base and development files:
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up --build
+```
+
+On Linux, set `HOST_UID` and `HOST_GID` before the first development build if the host user is
+not UID/GID `1000`. PostgreSQL is also exposed at `localhost:5432` in the development setup.
+
+Useful commands:
+
+```bash
+# Follow API logs
+docker compose logs -f api
+
+# Apply migrations explicitly
+docker compose run --rm migrate
+
+# Run tests in the development image
+docker compose -f compose.yaml -f compose.dev.yaml run --rm api pytest
+
+# Stop containers while preserving PostgreSQL data
+docker compose down
+
+# Stop containers and delete the PostgreSQL volume
+docker compose down --volumes
+```
+
+The last command permanently removes the Compose-managed development database. Rebuild the
+images after changing `pyproject.toml` or `uv.lock`.
 
 ## Authentication and OAuth
 
@@ -150,6 +210,21 @@ DELETE /api/v1/todos/{todo_id}
 Todo lists support search, status, priority, archive and due-date filters, sorting, limit, and offset.
 
 All queries are scoped to the authenticated user. Missing or foreign Todo IDs return `404`.
+
+Todo list and detail reads are cached in process memory for 60 seconds by default. Cache keys
+include the authenticated user and normalized request inputs, and successful Todo writes clear
+that user's cached reads. Configure the cache with:
+
+```env
+CACHE_ENABLED=true
+CACHE_PREFIX=todo-api
+CACHE_TTL_SECONDS=60
+```
+
+Cached responses expose `X-FastAPI-Cache: MISS` or `HIT`. They use
+`Cache-Control: private, no-store`, so browsers always contact the API while the server can
+reuse the in-memory value. The memory backend is local to one application process; use one
+worker when cache invalidation must be immediately consistent across requests.
 
 ## Development
 
