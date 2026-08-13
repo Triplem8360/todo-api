@@ -9,12 +9,13 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 * sliding refresh expiration and a fixed session lifetime;
 * Argon2 password hashing and hashed API keys;
 * owner-scoped Todo CRUD, filtering, sorting, and pagination;
-* per-user in-memory caching for Todo reads;
+* per-user Redis caching for Todo reads, with an in-memory option;
 * Alembic migrations and Prometheus metrics.
 
 ## Run locally
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and PostgreSQL.
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), PostgreSQL, and a reachable Redis
+instance. For local development without Redis, set `CACHE_BACKEND=memory`.
 
 ```bash
 uv sync --group dev
@@ -211,20 +212,36 @@ Todo lists support search, status, priority, archive and due-date filters, sorti
 
 All queries are scoped to the authenticated user. Missing or foreign Todo IDs return `404`.
 
-Todo list and detail reads are cached in process memory for 60 seconds by default. Cache keys
-include the authenticated user and normalized request inputs, and successful Todo writes clear
-that user's cached reads. Configure the cache with:
+Todo list and detail reads are cached in Redis for 60 seconds by default. Cache keys include the
+authenticated user and normalized request inputs, and successful Todo writes clear that user's
+cached reads. Because Redis is shared, cache hits and invalidations work across API workers.
+Configure the cache with:
 
 ```env
 CACHE_ENABLED=true
+CACHE_BACKEND=redis
 CACHE_PREFIX=todo-api
 CACHE_TTL_SECONDS=60
+REDIS_URL=redis://localhost:6379/0
+REDIS_CONNECT_TIMEOUT_SECONDS=2
+REDIS_SOCKET_TIMEOUT_SECONDS=2
 ```
 
 Cached responses expose `X-FastAPI-Cache: MISS` or `HIT`. They use
 `Cache-Control: private, no-store`, so browsers always contact the API while the server can
-reuse the in-memory value. The memory backend is local to one application process; use one
-worker when cache invalidation must be immediately consistent across requests.
+reuse the server-side value. If Redis is temporarily unavailable, Todo reads continue through
+the database and cache operations are logged as warnings.
+
+The original in-memory backend remains available without endpoint changes:
+
+```env
+CACHE_BACKEND=memory
+```
+
+Memory is convenient for tests and single-process development, but every worker owns an
+independent cache. Redis is the recommended backend for multiple workers. The Compose files do
+not define a Redis service yet, so `REDIS_URL` must point to a separately managed Redis instance
+when `CACHE_BACKEND=redis`.
 
 ## Development
 
