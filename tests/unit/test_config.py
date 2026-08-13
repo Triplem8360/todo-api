@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from todo_api.core.config import Settings
+
+TEST_SECRET = "test-secret-key-with-at-least-thirty-two-bytes"
 
 
 def test_env_example_matches_settings_validation_aliases() -> None:
@@ -15,3 +20,28 @@ def test_env_example_matches_settings_validation_aliases() -> None:
     validation_aliases = {str(field.validation_alias) for field in Settings.model_fields.values()}
 
     assert env_keys == validation_aliases
+
+
+def test_redis_is_the_default_cache_backend() -> None:
+    settings = Settings(_env_file=None, app_env="test", secret_key=TEST_SECRET)
+
+    assert settings.cache_backend == "redis"
+    assert settings.redis_url == "redis://localhost:6379/0"
+
+
+@pytest.mark.parametrize(
+    "redis_url",
+    [
+        "http://localhost:6379/0",
+        "redis:///0",
+        "redis://localhost:6379/0#fragment",
+    ],
+)
+def test_redis_url_requires_a_supported_absolute_url(redis_url: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="test",
+            secret_key=TEST_SECRET,
+            redis_url=redis_url,
+        )

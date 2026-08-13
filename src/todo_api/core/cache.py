@@ -9,7 +9,9 @@ from typing import Any
 
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
+from fastapi_cache.backends.redis import RedisBackend
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.responses import Response
@@ -24,11 +26,25 @@ logger = logging.getLogger(__name__)
 
 
 def initialize_cache(settings: Settings) -> None:
-    """Configure a fresh process-local cache for this application lifespan."""
+    """Register the configured cache backend for this application lifespan."""
 
     FastAPICache.reset()
+
+    if settings.cache_backend == "memory":
+        backend = InMemoryBackend()
+    else:
+        redis = Redis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=False,
+            socket_connect_timeout=settings.redis_connect_timeout_seconds,
+            socket_timeout=settings.redis_socket_timeout_seconds,
+            health_check_interval=30,
+        )
+        backend = RedisBackend(redis)
+
     FastAPICache.init(
-        InMemoryBackend(),
+        backend,
         prefix=settings.cache_prefix,
         expire=settings.cache_ttl_seconds,
         cache_status_header=CACHE_STATUS_HEADER,
@@ -37,12 +53,20 @@ def initialize_cache(settings: Settings) -> None:
 
 
 async def close_cache() -> None:
-    """Release cached values and reset fastapi-cache2's process-global state."""
+    """Release backend resources and reset fastapi-cache2's global state."""
 
+    backend = FastAPICache.get_backend()
     try:
-        await FastAPICache.clear()
+        # Redis is shared by every API worker, so one worker shutting down must
+        # not delete cache entries that the remaining workers still use.
+        if isinstance(backend, InMemoryBackend):
+            await FastAPICache.clear()
     finally:
-        FastAPICache.reset()
+        try:
+            if isinstance(backend, RedisBackend):
+                await backend.redis.aclose()
+        finally:
+            FastAPICache.reset()
 
 
 def todo_cache_key_builder(

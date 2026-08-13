@@ -638,7 +638,8 @@ The Todo ID must be a positive integer.
 
 ### Read caching
 
-The list and detail endpoints use a per-user, in-memory server cache. The response includes:
+The list and detail endpoints use a per-user server cache. Redis is the default backend, while
+the original process-local memory backend remains selectable. The response includes:
 
 ```http
 X-FastAPI-Cache: MISS
@@ -655,7 +656,7 @@ X-FastAPI-Cache: HIT
 
 The `no-store` directive applies to the browser or HTTP intermediary, not the FastAPI cache.
 It ensures every browser request reaches the API and prevents authenticated Todo responses from
-being stored outside the process. A request carrying `Cache-Control: no-cache` or `no-store`
+being stored by clients or proxies. A request carrying `Cache-Control: no-cache` or `no-store`
 bypasses the server cache for that request.
 
 Authentication still runs on cache hits. Only the Todo service and Todo repository queries are
@@ -666,13 +667,23 @@ Caching is configured with:
 
 ```env
 CACHE_ENABLED=true
+CACHE_BACKEND=redis
 CACHE_PREFIX=todo-api
 CACHE_TTL_SECONDS=60
+REDIS_URL=redis://localhost:6379/0
+REDIS_CONNECT_TIMEOUT_SECONDS=2
+REDIS_SOCKET_TIMEOUT_SECONDS=2
 ```
 
-The backend belongs to one process. Multiple workers maintain separate values and cannot
-invalidate each other, so a shared backend is required when horizontally scaling with immediate
-cross-worker consistency.
+`CACHE_BACKEND` accepts `redis` or `memory`. Redis stores the same encoded response values under
+the same per-user keys for every API worker, so a write handled by one worker invalidates the
+entries observed by all workers. The memory backend stores values only inside the current Python
+process and is intended for tests or single-worker development.
+
+Redis is not included in either Compose file at present. With the Redis backend selected,
+`REDIS_URL` must refer to an existing reachable instance. Cache get, set, or invalidation errors
+do not replace successful database reads or committed Todo writes; they are logged, and the TTL
+bounds stale data left behind after a failed invalidation.
 
 ### Update
 

@@ -46,12 +46,30 @@ class Settings(BaseSettings):
     )
 
     cache_enabled: bool = Field(default=True, validation_alias="CACHE_ENABLED")
+    cache_backend: Literal["memory", "redis"] = Field(default="redis", validation_alias="CACHE_BACKEND")
     cache_prefix: str = Field(default="todo-api", validation_alias="CACHE_PREFIX")
     cache_ttl_seconds: int = Field(
         default=60,
         ge=1,
         le=3_600,
         validation_alias="CACHE_TTL_SECONDS",
+    )
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        validation_alias="REDIS_URL",
+        repr=False,
+    )
+    redis_connect_timeout_seconds: float = Field(
+        default=2,
+        gt=0,
+        le=60,
+        validation_alias="REDIS_CONNECT_TIMEOUT_SECONDS",
+    )
+    redis_socket_timeout_seconds: float = Field(
+        default=2,
+        gt=0,
+        le=60,
+        validation_alias="REDIS_SOCKET_TIMEOUT_SECONDS",
     )
 
     database_url: str = Field(
@@ -246,6 +264,22 @@ class Settings(BaseSettings):
                 "DATABASE_URL must use PostgreSQL with the asyncpg driver "
                 "(postgresql+asyncpg://...)."
             )
+        return value
+
+    @field_validator("redis_url")
+    @classmethod
+    def require_redis_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+
+        if parsed.scheme not in {"redis", "rediss"}:
+            raise ValueError("REDIS_URL must use the redis:// or rediss:// scheme.")
+
+        if not parsed.hostname:
+            raise ValueError("REDIS_URL must include a host.")
+
+        if parsed.fragment:
+            raise ValueError("REDIS_URL must not include a fragment.")
+
         return value
 
     @field_validator("metrics_path")

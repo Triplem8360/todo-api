@@ -187,10 +187,10 @@ than routes or database models.
 
 ### Todo read cache
 
-`GET /todos` and `GET /todos/{todo_id}` use `fastapi-cache2` with a process-local in-memory
-backend. Authentication and request dependencies still execute on every request. A cache hit
-skips the Todo service and its owner-scoped Todo queries; it does not skip access-token or
-active-user validation.
+`GET /todos` and `GET /todos/{todo_id}` use `fastapi-cache2` with Redis by default.
+Authentication and request dependencies still execute on every request. A cache hit skips the
+Todo service and its owner-scoped Todo queries; it does not skip access-token or active-user
+validation.
 
 Each key contains the cache namespace, authenticated user ID, endpoint identity, and a SHA-256
 digest of the normalized list query or Todo ID. Tokens, cookies, database sessions, and service
@@ -202,20 +202,33 @@ affected user after the database commit. Invalidation is best-effort because a c
 must not turn an already-committed write into an error response; the configured TTL bounds any
 remaining stale value.
 
-The application initializes and clears the cache with its lifespan. `CACHE_ENABLED` controls
-whether decorators use it, `CACHE_PREFIX` identifies application-owned entries, and
+The application registers the selected backend during its lifespan and closes owned resources
+on shutdown. `CACHE_ENABLED` controls whether decorators use it, `CACHE_BACKEND` selects
+`redis` or `memory`, `CACHE_PREFIX` identifies application-owned entries, and
 `CACHE_TTL_SECONDS` controls entry lifetime. The default TTL is 60 seconds and validation
-permits values from 1 through 3600 seconds.
+permits values from 1 through 3600 seconds. `REDIS_URL` identifies the Redis database; connect
+and socket timeouts are both configurable so a cache outage cannot hold requests indefinitely.
+
+The endpoint `@cache` decorator is deliberately backend-neutral. The backend is a process-wide
+`fastapi-cache2` registration, so changing `CACHE_BACKEND` switches both cached Todo endpoints
+without changing their route code. The route comments make the original memory option visible
+where the decorators are applied.
 
 Cached HTTP responses use `Cache-Control: private, no-store`. Browser and shared proxy caches
 therefore do not retain authenticated Todo data, while `X-FastAPI-Cache` reports the server-side
 `MISS` or `HIT`. Credential-based `Vary` headers provide additional protection.
 
-The memory backend is intentionally a first-stage deployment choice. Every application worker
-has an independent cache, and a mutation handled by one worker cannot invalidate another
-worker's entries. Run a single worker when immediate cache consistency is required. A future
-multi-worker deployment should replace the backend with a shared cache that supports namespace
-invalidation.
+Redis keeps encoded response values and expiry metadata outside the API processes. All workers
+therefore observe the same keys, hits, and per-user invalidations. Redis entries are not deleted
+when one API worker shuts down, because other workers may still use them; the worker only closes
+its Redis connection pool. Cache read and write failures degrade to database reads, and
+post-commit invalidation remains best-effort.
+
+The original `InMemoryBackend` remains available with `CACHE_BACKEND=memory`. It avoids an
+external dependency and is useful in unit tests or a single-worker local environment. Every
+worker has an independent memory cache, however, so cross-worker invalidation is not possible.
+The Compose files intentionally have no Redis service for now; deployments using Redis must
+supply a reachable external `REDIS_URL`.
 
 ## API keys
 

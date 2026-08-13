@@ -3,8 +3,12 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from typing import Literal
+from unittest.mock import AsyncMock, Mock, patch
 
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
+from fastapi_cache.backends.redis import RedisBackend
 from starlette.datastructures import Headers
 from starlette.requests import Request
 from starlette.responses import Response
@@ -46,14 +50,50 @@ def _request(path: str = "/api/v1/todos") -> Request:
     )
 
 
-def _cache_settings(*, enabled: bool = True) -> Settings:
+def _cache_settings(
+    *,
+    enabled: bool = True,
+    backend: Literal["memory", "redis"] = "memory",
+) -> Settings:
     return Settings(
         _env_file=None,
         app_env="test",
         secret_key="test-secret-key-with-at-least-thirty-two-bytes",
         cache_enabled=enabled,
+        cache_backend=backend,
         cache_ttl_seconds=60,
     )
+
+
+def test_initialize_cache_registers_in_memory_backend() -> None:
+    initialize_cache(_cache_settings())
+
+    try:
+        assert isinstance(FastAPICache.get_backend(), InMemoryBackend)
+    finally:
+        asyncio.run(close_cache())
+
+
+def test_initialize_cache_registers_and_closes_redis_backend() -> None:
+    redis_client = Mock()
+    redis_client.aclose = AsyncMock()
+
+    with patch("todo_api.core.cache.Redis.from_url", return_value=redis_client) as from_url:
+        initialize_cache(_cache_settings(backend="redis"))
+
+        assert isinstance(FastAPICache.get_backend(), RedisBackend)
+        from_url.assert_called_once_with(
+            "redis://localhost:6379/0",
+            encoding="utf-8",
+            decode_responses=False,
+            socket_connect_timeout=2.0,
+            socket_timeout=2.0,
+            health_check_interval=30,
+        )
+
+        asyncio.run(close_cache())
+
+    redis_client.aclose.assert_awaited_once_with()
 
 
 def test_todo_cache_key_is_stable_and_user_scoped() -> None:
