@@ -3,6 +3,7 @@ name: todo-api
 x-app-environment: &app-environment
   APP_ENV: ${APP_ENV:-production}
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-todo_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-todo_db}
+  REDIS_URL: redis://redis:6379/0
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
 
 x-app: &app
@@ -44,6 +45,36 @@ services:
     restart: unless-stopped
 
 
+  redis:
+    image: redis:7.4.10-alpine3.21
+
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - ${REDIS_MAX_MEMORY:-128mb}
+      - --maxmemory-policy
+      - allkeys-lru
+
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+    restart: unless-stopped
+
+
   migrate:
     <<: *app
 
@@ -68,6 +99,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
     restart: unless-stopped
     init: true
