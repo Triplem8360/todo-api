@@ -27,6 +27,9 @@ def test_redis_is_the_default_cache_backend() -> None:
 
     assert settings.cache_backend == "redis"
     assert settings.redis_url == "redis://localhost:6379/0"
+    assert settings.apscheduler_redis_db == 1
+    assert settings.apscheduler_jobs_key == "todo-api:apscheduler:jobs"
+    assert settings.apscheduler_run_times_key == "todo-api:apscheduler:run-times"
 
 
 @pytest.mark.parametrize(
