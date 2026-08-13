@@ -227,8 +227,10 @@ post-commit invalidation remains best-effort.
 The original `InMemoryBackend` remains available with `CACHE_BACKEND=memory`. It avoids an
 external dependency and is useful in unit tests or a single-worker local environment. Every
 worker has an independent memory cache, however, so cross-worker invalidation is not possible.
-The Compose files intentionally have no Redis service for now; deployments using Redis must
-supply a reachable external `REDIS_URL`.
+Both Compose definitions supply an ephemeral Redis cache at `redis://redis:6379/0` and publish it
+only on host loopback for direct host execution. They disable Redis persistence, limit cache
+memory to `REDIS_MAX_MEMORY` (`128mb` by default), and use `allkeys-lru` eviction when the limit
+is reached. Externally managed deployments continue to supply their own reachable `REDIS_URL`.
 
 ## API keys
 

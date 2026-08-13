@@ -680,10 +680,11 @@ the same per-user keys for every API worker, so a write handled by one worker in
 entries observed by all workers. The memory backend stores values only inside the current Python
 process and is intended for tests or single-worker development.
 
-Redis is not included in either Compose file at present. With the Redis backend selected,
-`REDIS_URL` must refer to an existing reachable instance. Cache get, set, or invalidation errors
-do not replace successful database reads or committed Todo writes; they are logged, and the TTL
-bounds stale data left behind after a failed invalidation.
+Both Compose definitions provide Redis and set the API container URL to
+`redis://redis:6379/0`. They also publish Redis on loopback for direct host execution, which uses
+`REDIS_URL` from the environment. Cache get, set, or invalidation errors do not replace successful
+database reads or committed Todo writes; they are logged, and the TTL bounds stale data left
+behind after a failed invalidation.
 
 ### Update
 

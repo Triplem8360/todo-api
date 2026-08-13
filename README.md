@@ -46,19 +46,30 @@ The production image contains only runtime dependencies and runs as an unprivile
 development image includes the development dependency group and starts Uvicorn with reload.
 Use Compose for a runnable local stack because the API requires PostgreSQL during startup.
 
-Start the production-style image, PostgreSQL, and the one-shot migration service:
+Start the production-style image, PostgreSQL, Redis, and the one-shot migration service:
 
 ```bash
 docker compose up --build
 ```
 
-Compose waits for PostgreSQL to become healthy, applies Alembic migrations, and then starts
-one API worker at `http://localhost:8000`. Run it in the background with `-d` if preferred.
+Compose waits for PostgreSQL and Redis to become healthy, applies Alembic migrations, and then
+starts one API worker at `http://localhost:8000`. Redis is available to containers through the
+Compose network and is published only on `127.0.0.1:${REDIS_PORT:-6379}` for host-run API
+processes. It is configured as an ephemeral cache with a `128mb` default memory limit and
+`allkeys-lru` eviction. Override the limit with `REDIS_MAX_MEMORY`. Run the stack in the
+background with `-d` if preferred.
 
 For development with source mounts and Uvicorn reload, combine the base and development files:
 
 ```bash
 docker compose -f compose.yaml -f compose.dev.yaml up --build
+```
+
+The development file can also run by itself. It overrides host-oriented `.env` connection URLs
+with the Docker service names `db` and `redis` for the migration and API containers:
+
+```bash
+docker compose -f compose.dev.yaml up --build
 ```
 
 On Linux, set `HOST_UID` and `HOST_GID` before the first development build if the host user is
@@ -239,9 +250,10 @@ CACHE_BACKEND=memory
 ```
 
 Memory is convenient for tests and single-process development, but every worker owns an
-independent cache. Redis is the recommended backend for multiple workers. The Compose files do
-not define a Redis service yet, so `REDIS_URL` must point to a separately managed Redis instance
-when `CACHE_BACKEND=redis`.
+independent cache. Redis is the recommended backend for multiple workers. `compose.yaml`
+and `compose.dev.yaml` provide matching Redis services and override the container URL with
+`redis://redis:6379/0`; direct host execution uses the configured `REDIS_URL` through the
+loopback-only published port.
 
 ## Development
 
