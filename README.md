@@ -10,12 +10,14 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 * Argon2 password hashing and hashed API keys;
 * owner-scoped Todo CRUD, filtering, sorting, and pagination;
 * per-user Redis caching for Todo reads, with an in-memory option;
+* Redis-backed APScheduler maintenance jobs;
 * Alembic migrations and Prometheus metrics.
 
 ## Run locally
 
 Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), PostgreSQL, and a reachable Redis
-instance. For local development without Redis, set `CACHE_BACKEND=memory`.
+instance. `CACHE_BACKEND=memory` disables Redis for Todo caching, but the maintenance scheduler
+still requires Redis for its shared job store.
 
 ```bash
 uv sync --group dev
@@ -236,6 +238,9 @@ CACHE_TTL_SECONDS=60
 REDIS_URL=redis://localhost:6379/0
 REDIS_CONNECT_TIMEOUT_SECONDS=2
 REDIS_SOCKET_TIMEOUT_SECONDS=2
+APSCHEDULER_REDIS_DB=1
+APSCHEDULER_JOBS_KEY=todo-api:apscheduler:jobs
+APSCHEDULER_RUN_TIMES_KEY=todo-api:apscheduler:run-times
 ```
 
 Cached responses expose `X-FastAPI-Cache: MISS` or `HIT`. They use
@@ -254,6 +259,12 @@ independent cache. Redis is the recommended backend for multiple workers. `compo
 and `compose.dev.yaml` provide matching Redis services and override the container URL with
 `redis://redis:6379/0`; direct host execution uses the configured `REDIS_URL` through the
 loopback-only published port.
+
+APScheduler reuses the server, credentials, and timeout settings from `REDIS_URL`, overrides the
+logical database with `APSCHEDULER_REDIS_DB` (DB 1 by default), and stores jobs and next-run times
+under the two configured keys. The scheduler and its maintenance jobs are still created and
+started during the FastAPI lifespan. Existing job IDs are replaced at startup, so interval
+definitions stay aligned with the running application while their state is shared through Redis.
 
 ## Development
 

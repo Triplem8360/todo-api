@@ -673,6 +673,9 @@ CACHE_TTL_SECONDS=60
 REDIS_URL=redis://localhost:6379/0
 REDIS_CONNECT_TIMEOUT_SECONDS=2
 REDIS_SOCKET_TIMEOUT_SECONDS=2
+APSCHEDULER_REDIS_DB=1
+APSCHEDULER_JOBS_KEY=todo-api:apscheduler:jobs
+APSCHEDULER_RUN_TIMES_KEY=todo-api:apscheduler:run-times
 ```
 
 `CACHE_BACKEND` accepts `redis` or `memory`. Redis stores the same encoded response values under
@@ -685,6 +688,11 @@ Both Compose definitions provide Redis and set the API container URL to
 `REDIS_URL` from the environment. Cache get, set, or invalidation errors do not replace successful
 database reads or committed Todo writes; they are logged, and the TTL bounds stale data left
 behind after a failed invalidation.
+
+APScheduler uses the same Redis server and credentials but overrides the logical database with
+`APSCHEDULER_REDIS_DB`, which defaults to DB 1. Its jobs and run-time index use the two configured
+`APSCHEDULER_*_KEY` values. The scheduler remains part of application startup and is required even
+when `CACHE_BACKEND=memory` is selected.
 
 ### Update
 

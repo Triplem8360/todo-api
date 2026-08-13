@@ -232,6 +232,25 @@ only on host loopback for direct host execution. They disable Redis persistence,
 memory to `REDIS_MAX_MEMORY` (`128mb` by default), and use `allkeys-lru` eviction when the limit
 is reached. Externally managed deployments continue to supply their own reachable `REDIS_URL`.
 
+### Scheduled maintenance
+
+The application creates and starts an `AsyncIOScheduler` during the FastAPI lifespan, after the
+database health check succeeds. It continues to run the OAuth authorization-code and refresh-
+session pruning functions, including their existing completion logs, and shuts down before cache
+and database resources are released.
+
+The scheduler uses APScheduler's Redis job store. It reuses the endpoint and credentials parsed
+from `REDIS_URL`, while `APSCHEDULER_REDIS_DB` selects a separate logical database (DB 1 by
+default). `APSCHEDULER_JOBS_KEY` and `APSCHEDULER_RUN_TIMES_KEY` namespace the job definitions and
+next-run-time index. Redis connection and socket timeouts use the existing `REDIS_*_TIMEOUT_SECONDS`
+settings.
+
+Live SQLAlchemy engines cannot be serialized into persistent APScheduler jobs. The stored jobs
+therefore point to module-level scheduled entry points with no database argument; those entry
+points resolve the database created for the current application lifespan and then call the same
+maintenance functions. Stable job IDs and `replace_existing=True` refresh each interval definition
+at application startup without accumulating duplicate definitions.
+
 ## API keys
 
 API keys are intended for machine clients.

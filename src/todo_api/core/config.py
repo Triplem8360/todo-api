@@ -71,6 +71,21 @@ class Settings(BaseSettings):
         le=60,
         validation_alias="REDIS_SOCKET_TIMEOUT_SECONDS",
     )
+    apscheduler_redis_db: int = Field(
+        default=1,
+        ge=0,
+        validation_alias="APSCHEDULER_REDIS_DB",
+    )
+    apscheduler_jobs_key: str = Field(
+        default="todo-api:apscheduler:jobs",
+        min_length=1,
+        validation_alias="APSCHEDULER_JOBS_KEY",
+    )
+    apscheduler_run_times_key: str = Field(
+        default="todo-api:apscheduler:run-times",
+        min_length=1,
+        validation_alias="APSCHEDULER_RUN_TIMES_KEY",
+    )
 
     database_url: str = Field(
         default="postgresql+asyncpg://todo:todo@localhost:5432/todo",
@@ -282,6 +297,14 @@ class Settings(BaseSettings):
 
         return value
 
+    @field_validator("apscheduler_jobs_key", "apscheduler_run_times_key")
+    @classmethod
+    def validate_apscheduler_redis_key(cls, value: str) -> str:
+        key = value.strip()
+        if not key:
+            raise ValueError("APScheduler Redis keys must not be empty.")
+        return key
+
     @field_validator("metrics_path")
     @classmethod
     def validate_metrics_path(cls, value: str) -> str:
@@ -318,6 +341,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_signing_secret(self) -> Settings:
+        if self.apscheduler_jobs_key == self.apscheduler_run_times_key:
+            raise ValueError("APSCHEDULER_JOBS_KEY and APSCHEDULER_RUN_TIMES_KEY must differ.")
+
         secret = self.secret_key.get_secret_value()
         minimum_size = HMAC_MINIMUM_KEY_BYTES[self.jwt_algorithm]
         secret_size = len(secret.encode())

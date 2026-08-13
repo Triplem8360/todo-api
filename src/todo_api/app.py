@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 from todo_api import __version__
 from todo_api.api.exception_handlers import register_exception_handlers
 from todo_api.api.v1.router import api_router
-from todo_api.background.scheduler import create_scheduler
+from todo_api.background.scheduler import create_scheduler, release_scheduler_database
 from todo_api.core.cache import (
     PrivateCacheHeadersMiddleware,
     close_cache,
@@ -41,7 +41,7 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await db.ping(settings.db_healthcheck_timeout_seconds)
 
-        scheduler = create_scheduler(db)
+        scheduler = create_scheduler(db, settings)
         app.state.scheduler = scheduler
         scheduler.start()
         initialize_cache(settings)
@@ -50,6 +50,7 @@ def create_app(
             yield
         finally:
             scheduler.shutdown(wait=False)
+            release_scheduler_database(db)
             try:
                 await close_cache()
             finally:
