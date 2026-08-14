@@ -18,6 +18,8 @@ All paths below use the `/api/v1` prefix.
 | POST   | `/api-keys`               | Bearer access token       | Create an API key                   |
 | GET    | `/api-keys`               | Bearer access token       | List owned API keys                 |
 | DELETE | `/api-keys/{id}`          | Bearer access token       | Revoke an owned API key             |
+| GET    | `/emails/smtp`            | Bearer access token       | Check the configured SMTP service   |
+| POST   | `/emails/test`            | Bearer access token       | Send a test email to the current user |
 | GET    | `/users/me`               | Bearer access token       | Read the current profile            |
 | PATCH  | `/users/me`               | Bearer access token       | Update the current profile name     |
 | DELETE | `/users/me`               | Bearer access token       | Deactivate the current account      |

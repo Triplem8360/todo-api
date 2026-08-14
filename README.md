@@ -9,6 +9,7 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 * sliding refresh expiration and a fixed session lifetime;
 * Argon2 password hashing and hashed API keys;
 * owner-scoped Todo CRUD, filtering, sorting, and pagination;
+* asynchronous SMTP delivery with a local smtp4dev inbox;
 * per-user Redis caching for Todo reads, with an in-memory option;
 * Redis-backed APScheduler maintenance jobs;
 * Alembic migrations and Prometheus metrics.
@@ -28,6 +29,7 @@ uv run todo-api
 
 * OpenAPI: `http://localhost:8000/docs`
 * Metrics: `http://localhost:8000/metrics`
+* smtp4dev inbox (development Compose): `http://localhost:5000`
 
 ## Run with Docker
 
@@ -68,7 +70,7 @@ docker compose -f compose.yaml -f compose.dev.yaml up --build
 ```
 
 The development file can also run by itself. It overrides host-oriented `.env` connection URLs
-with the Docker service names `db` and `redis` for the migration and API containers:
+with the Docker service names `db`, `redis`, and `smtp4dev` for the migration and API containers:
 
 ```bash
 docker compose -f compose.dev.yaml up --build
@@ -260,6 +262,17 @@ and `compose.dev.yaml` provide matching Redis services and override the containe
 `redis://redis:6379/0`; direct host execution uses the configured `REDIS_URL` through the
 loopback-only published port.
 
+## Email testing
+
+The development Compose stack runs smtp4dev on `smtp4dev:25` for containers and publishes SMTP
+on `localhost:2525` for a host-run API. Its web inbox is available only on the local machine at
+`http://localhost:5000`. Use the authenticated `GET /api/v1/emails/smtp` endpoint to check the
+SMTP handshake and `POST /api/v1/emails/test` to send a plain or HTML message to the current
+user. smtp4dev captures that message instead of delivering it externally.
+
+See [Email and smtp4dev](docs/email.md) for endpoint examples and an explanation of every
+FastAPI-Mail connection setting.
+
 APScheduler reuses the server, credentials, and timeout settings from `REDIS_URL`, overrides the
 logical database with `APSCHEDULER_REDIS_DB` (DB 1 by default), and stores jobs and next-run times
 under the two configured keys. The scheduler and its maintenance jobs are still created and
@@ -280,3 +293,4 @@ See:
 * [API](docs/api.md)
 * [Architecture](docs/architecture.md)
 * [Database](docs/database.md)
+* [Email and smtp4dev](docs/email.md)

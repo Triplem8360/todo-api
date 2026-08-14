@@ -48,3 +48,24 @@ def test_redis_url_requires_a_supported_absolute_url(redis_url: str) -> None:
             secret_key=TEST_SECRET,
             redis_url=redis_url,
         )
+
+
+def test_mail_tls_modes_are_mutually_exclusive() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="test",
+            secret_key=TEST_SECRET,
+            mail_starttls=True,
+            mail_ssl_tls=True,
+        )
+
+
+def test_mail_credentials_are_required_when_login_is_enabled() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="test",
+            secret_key=TEST_SECRET,
+            mail_use_credentials=True,
+        )

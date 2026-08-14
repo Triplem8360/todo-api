@@ -3,6 +3,12 @@ name: todo-api
 x-app-environment: &app-environment
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-todo_user}:${POSTGRES_PASSWORD:-123}@db:5432/${POSTGRES_DB:-todo_db}
   REDIS_URL: redis://redis:6379/0
+  MAIL_SERVER: smtp4dev
+  MAIL_PORT: 25
+  MAIL_STARTTLS: "false"
+  MAIL_SSL_TLS: "false"
+  USE_CREDENTIALS: "false"
+  SUPPRESS_SEND: "false"
 
 x-app: &app
   image: triplem/todo-api:dev
@@ -81,6 +87,35 @@ services:
       start_period: 5s
 
 
+  smtp4dev:
+    image: rnwood/smtp4dev:v3
+
+    ports:
+      - "127.0.0.1:${SMTP4DEV_WEB_PORT:-5000}:80"
+      - "127.0.0.1:${SMTP4DEV_SMTP_PORT:-2525}:25"
+
+    environment:
+      ServerOptions__HostName: smtp4dev
+      ServerOptions__LockSettings: "true"
+      ServerOptions__TlsMode: None
+
+    volumes:
+      - smtp4dev_data:/smtp4dev
+
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - --show-error
+        - http://localhost/
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+
   migrate:
     <<: *app
 
@@ -120,9 +155,12 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      smtp4dev:
+        condition: service_healthy
 
     init: true
 
 
 volumes:
   postgres_data:
+  smtp4dev_data:
