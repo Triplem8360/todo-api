@@ -57,6 +57,7 @@ from todo_api.repositories.api_key import get_active_api_key_by_hash
 from todo_api.repositories.user import get_user_by_email, get_user_by_id
 from todo_api.services.api_key import APIKeyService
 from todo_api.services.auth import AuthService
+from todo_api.services.email import EmailService
 from todo_api.services.oauth import OAuthService
 from todo_api.services.todo import TodoService
 from todo_api.services.user import UserService
@@ -321,6 +322,10 @@ def get_auth_service(session: DbSession, settings: AppSettings) -> AuthService:
     return AuthService(session=session, settings=settings)
 
 
+def get_email_service(settings: AppSettings) -> EmailService:
+    return EmailService(settings=settings)
+
+
 def get_oauth_service(
     session: DbSession, settings: AppSettings, auth: AuthServiceDep
 ) -> OAuthService:
@@ -426,6 +431,7 @@ CurrentHeaderAPIKeyUser: TypeAlias = Annotated[User, Depends(get_current_header_
 CurrentQueryAPIKeyUser: TypeAlias = Annotated[User, Depends(get_current_query_api_key_user)]
 APIKeyServiceDep = Annotated[APIKeyService, Depends(get_api_key_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+EmailServiceDep = Annotated[EmailService, Depends(get_email_service)]
 OAuthServiceDep = Annotated[OAuthService, Depends(get_oauth_service)]
 TodoServiceDep = Annotated[TodoService, Depends(get_todo_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]

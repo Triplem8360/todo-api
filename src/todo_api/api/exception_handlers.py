@@ -25,6 +25,7 @@ from todo_api.exceptions.auth import (
     RequestOriginNotAllowedError,
 )
 from todo_api.exceptions.base import ApplicationError
+from todo_api.exceptions.email import EmailServiceUnavailableError
 from todo_api.exceptions.oauth import (
     InvalidOAuthClientError,
     OAuthProtocolError,
@@ -57,6 +58,7 @@ ERROR_CONFIG: dict[type[ApplicationError], ErrorConfig] = {
     AuthServiceError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
     APIKeyServiceError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
     UserServiceError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
+    EmailServiceUnavailableError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
 }
 
 

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import timedelta
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import DirectoryPath, EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -46,7 +47,9 @@ class Settings(BaseSettings):
     )
 
     cache_enabled: bool = Field(default=True, validation_alias="CACHE_ENABLED")
-    cache_backend: Literal["memory", "redis"] = Field(default="redis", validation_alias="CACHE_BACKEND")
+    cache_backend: Literal["memory", "redis"] = Field(
+        default="redis", validation_alias="CACHE_BACKEND"
+    )
     cache_prefix: str = Field(default="todo-api", validation_alias="CACHE_PREFIX")
     cache_ttl_seconds: int = Field(
         default=60,
@@ -191,6 +194,51 @@ class Settings(BaseSettings):
     )
 
     metrics_path: str = Field(default="/metrics", validation_alias="METRICS_PATH")
+
+    mail_username: str = Field(default="", validation_alias="MAIL_USERNAME")
+    mail_password: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="MAIL_PASSWORD",
+        repr=False,
+    )
+    mail_port: int = Field(default=2525, ge=1, le=65_535, validation_alias="MAIL_PORT")
+    mail_server: str = Field(default="localhost", min_length=1, validation_alias="MAIL_SERVER")
+    mail_starttls: bool = Field(default=False, validation_alias="MAIL_STARTTLS")
+    mail_ssl_tls: bool = Field(default=False, validation_alias="MAIL_SSL_TLS")
+    mail_debug: Literal[0, 1] = Field(default=0, validation_alias="MAIL_DEBUG")
+    mail_from: EmailStr = Field(default="noreply@example.com", validation_alias="MAIL_FROM")
+    mail_from_name: str | None = Field(default="Todo API", validation_alias="MAIL_FROM_NAME")
+    mail_template_folder: DirectoryPath | None = Field(
+        default=None, 
+        validation_alias="TEMPLATE_FOLDER"
+    )
+    mail_suppress_send: bool = Field(default=False, validation_alias="SUPPRESS_SEND")
+    mail_use_credentials: bool = Field(default=False, validation_alias="USE_CREDENTIALS")
+    mail_validate_certs: bool = Field(default=True, validation_alias="VALIDATE_CERTS")
+    mail_timeout_seconds: int = Field(default=10, gt=0, le=300, validation_alias="TIMEOUT")
+    mail_local_hostname: str | None = Field(default=None, validation_alias="LOCAL_HOSTNAME")
+    mail_cert_bundle: Path | None = Field(default=None, validation_alias="CERT_BUNDLE")
+
+    @field_validator(
+        "mail_from_name",
+        "mail_template_folder",
+        "mail_local_hostname",
+        "mail_cert_bundle",
+        mode="before",
+    )
+    @classmethod
+    def empty_mail_options_are_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("mail_server")
+    @classmethod
+    def validate_mail_server(cls, value: str) -> str:
+        server = value.strip()
+        if not server:
+            raise ValueError("MAIL_SERVER must not be blank.")
+        return server
 
     @field_validator("allowed_hosts")
     @classmethod
@@ -343,6 +391,16 @@ class Settings(BaseSettings):
     def validate_signing_secret(self) -> Settings:
         if self.apscheduler_jobs_key == self.apscheduler_run_times_key:
             raise ValueError("APSCHEDULER_JOBS_KEY and APSCHEDULER_RUN_TIMES_KEY must differ.")
+
+        if self.mail_starttls and self.mail_ssl_tls:
+            raise ValueError("MAIL_STARTTLS and MAIL_SSL_TLS cannot both be enabled.")
+
+        if self.mail_use_credentials and (
+            not self.mail_username.strip() or not self.mail_password.get_secret_value()
+        ):
+            raise ValueError(
+                "MAIL_USERNAME and MAIL_PASSWORD are required when USE_CREDENTIALS is enabled."
+            )
 
         secret = self.secret_key.get_secret_value()
         minimum_size = HMAC_MINIMUM_KEY_BYTES[self.jwt_algorithm]
