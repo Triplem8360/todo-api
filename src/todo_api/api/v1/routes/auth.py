@@ -1,13 +1,28 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi_mail import MessageType
 
-from todo_api.api.deps import AuthServiceDep, require_browser_csrf_token
+from todo_api.api.deps import (
+    AuthServiceDep,
+    EmailServiceDep,
+    require_browser_csrf_token,
+)
 from todo_api.api.responses import error_response
 from todo_api.background.request_tasks import record_activity
+from todo_api.core.config import Settings
 from todo_api.core.cookies import (
     REFRESH_COOKIE_NAME,
     clear_browser_session_cookies,
@@ -16,38 +31,76 @@ from todo_api.core.cookies import (
 from todo_api.exceptions.auth import (
     AuthServiceError,
     EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
+    EmailVerificationUnavailableError,
     InactiveUserError,
     InvalidCredentialsError,
     InvalidCSRFTokenError,
+    InvalidEmailVerificationTokenError,
     InvalidRefreshTokenError,
     LoginSessionUnavailableError,
     LogoutUnavailableError,
     RegistrationUnavailableError,
     TokenRefreshUnavailableError,
 )
-from todo_api.models.user import User
+from todo_api.exceptions.email import EmailServiceUnavailableError
 from todo_api.observability.metrics import record_auth_attempt, record_registration
 from todo_api.schemas.token import (
     BrowserSessionResponseSchema,
     RefreshTokenRequestSchema,
     TokenResponseSchema,
 )
-from todo_api.schemas.user import UserCreateSchema, UserResponseSchema
+from todo_api.schemas.user import (
+    EmailVerificationAcceptedSchema,
+    EmailVerificationResendRequestSchema,
+    EmailVerificationResponseSchema,
+    RegistrationResponseSchema,
+    UserCreateSchema,
+    UserResponseSchema,
+)
+from todo_api.services.auth import PendingEmailVerification
+from todo_api.services.email import EmailService
+from todo_api.utils.email import create_verification_email
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+logger = logging.getLogger(__name__)
 
 
 def _authentication_failure_outcome(error: AuthServiceError) -> str:
     if isinstance(error, InactiveUserError):
         return "inactive"
+    if isinstance(error, EmailNotVerifiedError):
+        return "unverified"
     if isinstance(error, (InvalidCredentialsError, InvalidRefreshTokenError)):
         return "invalid"
     return "error"
 
 
+async def _deliver_verification_email(
+    pending: PendingEmailVerification,
+    email_service: EmailService,
+    settings: Settings,
+) -> bool:
+    message = create_verification_email(
+        settings, token=pending.token, full_name=pending.user.full_name
+    )
+
+    try:
+        return await email_service.send(
+            recipient=pending.user.email,
+            subject=message.subject,
+            body=message.html_body,
+            subtype=MessageType.html,
+            alternative_body=message.plain_body,
+        )
+    except EmailServiceUnavailableError:
+        logger.exception("Verification email delivery failed", extra={"user_id": pending.user.id})
+        return False
+
+
 @router.post(
     "/register",
-    response_model=UserResponseSchema,
+    response_model=RegistrationResponseSchema,
     status_code=status.HTTP_201_CREATED,
     responses={
         status.HTTP_409_CONFLICT: error_response(
@@ -61,10 +114,14 @@ def _authentication_failure_outcome(error: AuthServiceError) -> str:
 )
 async def register(
     payload: UserCreateSchema,
-    service: AuthServiceDep,
+    auth_service: AuthServiceDep,
+    email_service: EmailServiceDep,
     background_tasks: BackgroundTasks,
-) -> User:
-    user = await service.register(payload)
+) -> RegistrationResponseSchema:
+    pending = await auth_service.register_pending_verification(payload)
+    email_sent = await _deliver_verification_email(pending, email_service, auth_service.settings)
+    user = pending.user
+
     record_registration("success")
     background_tasks.add_task(
         record_activity,
@@ -73,7 +130,76 @@ async def register(
         resource_type="user",
         resource_id=user.id,
     )
-    return user
+
+    return RegistrationResponseSchema(
+        **UserResponseSchema.model_validate(user).model_dump(),
+        verification_email_sent=email_sent,
+    )
+
+
+@router.post(
+    "/email-verification/resend",
+    response_model=EmailVerificationAcceptedSchema,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Request another email-verification link",
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
+            EmailVerificationUnavailableError,
+            description="Email verification is unavailable.",
+        )
+    },
+)
+async def resend_email_verification(
+    payload: EmailVerificationResendRequestSchema,
+    auth_service: AuthServiceDep,
+    email_service: EmailServiceDep,
+    background_tasks: BackgroundTasks,
+) -> EmailVerificationAcceptedSchema:
+    pending = await auth_service.request_email_verification(str(payload.email))
+    if pending is not None:
+        background_tasks.add_task(
+            _deliver_verification_email,
+            pending,
+            email_service,
+            auth_service.settings,
+        )
+
+    return EmailVerificationAcceptedSchema()
+
+
+@router.get(
+    "/email-verification/confirm",
+    response_model=EmailVerificationResponseSchema,
+    summary="Confirm an email-verification link",
+    responses={
+        status.HTTP_400_BAD_REQUEST: error_response(
+            InvalidEmailVerificationTokenError,
+            description="The verification link is invalid or expired.",
+        ),
+        status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
+            EmailVerificationUnavailableError,
+            description="Email verification is unavailable.",
+        ),
+    },
+)
+async def confirm_email_verification(
+    response: Response,
+    service: AuthServiceDep,
+    background_tasks: BackgroundTasks,
+    token: Annotated[str, Query(min_length=32, max_length=256)],
+) -> EmailVerificationResponseSchema:
+    user = await service.verify_email(token)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    background_tasks.add_task(
+        record_activity,
+        "user.email_verified",
+        user_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+    )
+    return EmailVerificationResponseSchema()
 
 
 @router.post(
@@ -87,7 +213,8 @@ async def register(
         ),
         status.HTTP_403_FORBIDDEN: error_response(
             InactiveUserError,
-            description="Account is inactive.",
+            EmailNotVerifiedError,
+            description="Account is inactive or its email is not verified.",
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
             LoginSessionUnavailableError,
@@ -122,7 +249,8 @@ async def login(
         ),
         status.HTTP_403_FORBIDDEN: error_response(
             InactiveUserError,
-            description="Account is inactive.",
+            EmailNotVerifiedError,
+            description="Account is inactive or its email is not verified.",
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
             LoginSessionUnavailableError,
@@ -162,7 +290,8 @@ async def browser_login(
         ),
         status.HTTP_403_FORBIDDEN: error_response(
             InactiveUserError,
-            description="Account is inactive.",
+            EmailNotVerifiedError,
+            description="Account is inactive or its email is not verified.",
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
             TokenRefreshUnavailableError, description="Token refresh is unavailable."
@@ -195,8 +324,11 @@ async def refresh(
         ),
         status.HTTP_403_FORBIDDEN: error_response(
             InactiveUserError,
+            EmailNotVerifiedError,
             InvalidCSRFTokenError,
-            description="Account is inactive or the CSRF token is invalid.",
+            description=(
+                "Account is inactive, its email is not verified, " "or the CSRF token is invalid."
+            ),
         ),
         status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
             TokenRefreshUnavailableError,

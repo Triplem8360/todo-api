@@ -65,6 +65,12 @@ def generate_token_id() -> str:
     return secrets.token_hex(_TOKEN_BYTES)
 
 
+def generate_email_verification_token() -> str:
+    """Return a high-entropy opaque token suitable for an emailed URL."""
+
+    return secrets.token_urlsafe(_TOKEN_BYTES)
+
+
 def _required(value: str, name: str) -> str:
     if normalized := value.strip():
         return normalized

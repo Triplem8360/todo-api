@@ -15,11 +15,14 @@ from todo_api.exceptions.api_key import (
 from todo_api.exceptions.auth import (
     AuthServiceError,
     EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
+    EmailVerificationUnavailableError,
     InactiveUserError,
     InvalidAccessTokenError,
     InvalidBasicCredentialsError,
     InvalidCredentialsError,
     InvalidCSRFTokenError,
+    InvalidEmailVerificationTokenError,
     InvalidRefreshTokenError,
     RegistrationUnavailableError,
     RequestOriginNotAllowedError,
@@ -45,6 +48,9 @@ class ErrorConfig:
 
 ERROR_CONFIG: dict[type[ApplicationError], ErrorConfig] = {
     EmailAlreadyRegisteredError: ErrorConfig(status.HTTP_409_CONFLICT),
+    EmailNotVerifiedError: ErrorConfig(status.HTTP_403_FORBIDDEN),
+    InvalidEmailVerificationTokenError: ErrorConfig(status.HTTP_400_BAD_REQUEST),
+    EmailVerificationUnavailableError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
     InvalidCredentialsError: ErrorConfig(status.HTTP_401_UNAUTHORIZED, "Bearer"),
     InvalidBasicCredentialsError: ErrorConfig(status.HTTP_401_UNAUTHORIZED, "Basic"),
     InvalidAccessTokenError: ErrorConfig(status.HTTP_401_UNAUTHORIZED, "Bearer"),

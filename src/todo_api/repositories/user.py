@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,10 @@ async def create_user(
     full_name: str | None = None,
     is_active: bool = True,
     is_superuser: bool = False,
+    email_verified_at: datetime | None = None,
+    email_verification_token_hash: str | None = None,
+    email_verification_expires_at: datetime | None = None,
+    email_verification_requested_at: datetime | None = None,
 ) -> User:
     user = User(
         email=email,
@@ -30,6 +36,10 @@ async def create_user(
         full_name=full_name,
         is_active=is_active,
         is_superuser=is_superuser,
+        email_verified_at=email_verified_at,
+        email_verification_token_hash=email_verification_token_hash,
+        email_verification_expires_at=email_verification_expires_at,
+        email_verification_requested_at=email_verification_requested_at,
     )
 
     session.add(user)

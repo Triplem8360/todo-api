@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -86,6 +87,7 @@ def active_user() -> User:
         hashed_password="password-hash",
         is_active=True,
         is_superuser=False,
+        email_verified_at=datetime.now(UTC),
     )
 
 

@@ -50,6 +50,40 @@ Content-Type: application/json
 After a `sent` response, open the smtp4dev UI and inspect the recipient, subject, rendered body,
 raw MIME source, and SMTP session.
 
+## Registration verification
+
+`POST /api/v1/auth/register` now creates an unverified account and synchronously attempts to send
+a multipart HTML/plain-text verification message. Delivery failure does not roll back a valid
+account; the response exposes `verification_email_sent: false` so the client can present a resend
+action. Open the message in smtp4dev and follow its single-use link:
+
+```http
+GET /api/v1/auth/email-verification/confirm?token=<opaque-token>
+```
+
+If the message was not delivered, request another without revealing whether an account exists:
+
+```http
+POST /api/v1/auth/email-verification/resend
+Content-Type: application/json
+
+{"email": "user@example.com"}
+```
+
+The verification URL, token lifetime, and resend cooldown are configured with:
+
+```env
+EMAIL_VERIFICATION_URL=http://localhost:8000/api/v1/auth/email-verification/confirm
+EMAIL_VERIFICATION_TOKEN_TTL=PT24H
+EMAIL_VERIFICATION_RESEND_COOLDOWN=PT60S
+```
+
+The two duration values use ISO 8601 syntax: `PT24H` means 24 hours and `PT60S` means
+60 seconds.
+
+Staging and production require an HTTPS verification URL. Existing accounts are marked verified
+by the migration, while trusted CLI and seed workflows continue creating verified accounts.
+
 ## FastAPI-Mail `ConnectionConfig`
 
 The application exposes every field in FastAPI-Mail 1.6.5's `ConnectionConfig`. Values come from

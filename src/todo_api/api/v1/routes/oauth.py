@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from todo_api.api.deps import OAuthServiceDep
 from todo_api.exceptions.auth import (
+    EmailNotVerifiedError,
     InactiveUserError,
     InvalidCredentialsError,
 )
@@ -343,7 +344,7 @@ async def authorize(
             password=password,
             request=request,
         )
-    except (InvalidCredentialsError, InactiveUserError):
+    except (InvalidCredentialsError, InactiveUserError, EmailNotVerifiedError):
         return _login_page(request, error="Invalid email or password.")
     except (OAuthProtocolError, AuthorizationCodeIssuanceUnavailableError) as exc:
         return _redirect_authorization_error(

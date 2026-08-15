@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiosmtplib.errors import SMTPException
-from fastapi_mail import FastMail, MessageSchema, MessageType
+from fastapi_mail import FastMail, MessageSchema, MessageType, MultipartSubtypeEnum
 from fastapi_mail.connection import Connection
 from fastapi_mail.errors import ConnectionErrors
 
@@ -26,12 +26,19 @@ class EmailService:
         subject: str,
         body: str,
         subtype: MessageType = MessageType.plain,
+        alternative_body: str | None = None,
     ) -> bool:
         message = MessageSchema(
             subject=subject,
             recipients=[recipient],
             body=body,
             subtype=subtype,
+            alternative_body=alternative_body,
+            multipart_subtype=(
+                MultipartSubtypeEnum.alternative
+                if alternative_body is not None
+                else MultipartSubtypeEnum.mixed
+            ),
         )
 
         try:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from anyio import to_thread
@@ -16,6 +16,7 @@ from todo_api.core.security import (
     DUMMY_PASSWORD_HASH,
     create_token_pair,
     decode_refresh_token,
+    generate_email_verification_token,
     generate_token_id,
     hash_password,
     hash_secret,
@@ -24,8 +25,11 @@ from todo_api.core.security import (
 from todo_api.db.errors import is_constraint_violation
 from todo_api.exceptions.auth import (
     EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
+    EmailVerificationUnavailableError,
     InactiveUserError,
     InvalidCredentialsError,
+    InvalidEmailVerificationTokenError,
     InvalidRefreshTokenError,
     LoginSessionUnavailableError,
     LogoutUnavailableError,
@@ -45,12 +49,56 @@ from todo_api.schemas.user import UserCreateSchema
 from todo_api.utils.email import normalize_email
 
 
+@dataclass(frozen=True, slots=True)
+class PendingEmailVerification:
+    user: User
+    token: str = field(repr=False)
+    expires_at: datetime
+
+
 @dataclass(slots=True)
 class AuthService:
     session: AsyncSession
     settings: Settings
 
     async def register(self, payload: UserCreateSchema, *, is_superuser: bool = False) -> User:
+        """Create a verified account for trusted CLI and seed workflows."""
+
+        return await self._register(
+            payload,
+            is_superuser=is_superuser,
+            email_verified_at=datetime.now(UTC),
+        )
+
+    async def register_pending_verification(
+        self,
+        payload: UserCreateSchema,
+    ) -> PendingEmailVerification:
+        """Create an unverified account and its first single-use token."""
+
+        now = datetime.now(UTC)
+        token = generate_email_verification_token()
+        expires_at = now + self.settings.email_verification_token_ttl
+        user = await self._register(
+            payload,
+            is_superuser=False,
+            email_verified_at=None,
+            verification_token=token,
+            verification_expires_at=expires_at,
+            verification_requested_at=now,
+        )
+        return PendingEmailVerification(user=user, token=token, expires_at=expires_at)
+
+    async def _register(
+        self,
+        payload: UserCreateSchema,
+        *,
+        is_superuser: bool,
+        email_verified_at: datetime | None,
+        verification_token: str | None = None,
+        verification_expires_at: datetime | None = None,
+        verification_requested_at: datetime | None = None,
+    ) -> User:
         """Register a user with a stable duplicate-email response."""
 
         try:
@@ -76,6 +124,12 @@ class AuthService:
                 full_name=payload.full_name,
                 hashed_password=password_hash,
                 is_superuser=is_superuser,
+                email_verified_at=email_verified_at,
+                email_verification_token_hash=(
+                    hash_secret(verification_token) if verification_token else None
+                ),
+                email_verification_expires_at=verification_expires_at,
+                email_verification_requested_at=verification_requested_at,
             )
             await self.session.commit()
         except IntegrityError as exc:
@@ -85,6 +139,81 @@ class AuthService:
             raise RegistrationUnavailableError() from exc
         except SQLAlchemyError as exc:
             raise RegistrationUnavailableError() from exc
+
+        return user
+
+    async def request_email_verification(self, email: str) -> PendingEmailVerification | None:
+        """Rotate an unverified user's token subject to a resend cooldown.
+
+        Returning ``None`` for missing, verified, and cooldown-limited users lets
+        the route provide the same response for every address.
+        """
+
+        now = datetime.now(UTC)
+        token = generate_email_verification_token()
+
+        try:
+            user = await self.session.scalar(
+                select(User).where(User.email == normalize_email(email)).with_for_update()
+            )
+
+            if user is None or user.is_email_verified:
+                return None
+
+            if (
+                user.email_verification_requested_at is not None
+                and now
+                < user.email_verification_requested_at
+                + self.settings.email_verification_resend_cooldown
+            ):
+                return None
+
+            expires_at = now + self.settings.email_verification_token_ttl
+            user.email_verification_token_hash = hash_secret(token)
+            user.email_verification_expires_at = expires_at
+            user.email_verification_requested_at = now
+            await self.session.commit()
+        except SQLAlchemyError as exc:
+            raise EmailVerificationUnavailableError() from exc
+
+        return PendingEmailVerification(user=user, token=token, expires_at=expires_at)
+
+    async def verify_email(self, token: str) -> User:
+        """Consume a valid email-verification token exactly once."""
+
+        normalized_token = token.strip()
+        if not normalized_token:
+            raise InvalidEmailVerificationTokenError()
+
+        token_hash = hash_secret(normalized_token)
+        now = datetime.now(UTC)
+
+        try:
+            user = await self.session.scalar(
+                select(User)
+                .where(User.email_verification_token_hash == token_hash)
+                .with_for_update()
+            )
+
+            if user is None or user.is_email_verified:
+                raise InvalidEmailVerificationTokenError()
+
+            if (
+                user.email_verification_expires_at is None
+                or user.email_verification_expires_at <= now
+            ):
+                user.email_verification_token_hash = None
+                user.email_verification_expires_at = None
+                await self.session.commit()
+                raise InvalidEmailVerificationTokenError()
+
+            user.email_verified_at = now
+            user.email_verification_token_hash = None
+            user.email_verification_expires_at = None
+            user.email_verification_requested_at = None
+            await self.session.commit()
+        except SQLAlchemyError as exc:
+            raise EmailVerificationUnavailableError() from exc
 
         return user
 
@@ -112,6 +241,9 @@ class AuthService:
 
         if not user.is_active:
             raise InactiveUserError()
+
+        if not user.is_email_verified:
+            raise EmailNotVerifiedError()
 
         if replacement_hash is not None:
             user.hashed_password = replacement_hash
@@ -212,6 +344,9 @@ class AuthService:
 
             if not user.is_active:
                 raise InactiveUserError()
+
+            if not user.is_email_verified:
+                raise EmailNotVerifiedError()
 
             tokens = create_token_pair(
                 subject=str(user.id),

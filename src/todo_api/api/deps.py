@@ -44,6 +44,7 @@ from todo_api.exceptions.api_key import (
 )
 from todo_api.exceptions.auth import (
     BasicAuthenticationUnavailableError,
+    EmailNotVerifiedError,
     InactiveUserError,
     InvalidAccessTokenError,
     InvalidBasicCredentialsError,
@@ -146,6 +147,10 @@ def _require_active_user(user: User, mechanism: str) -> User:
     if not user.is_active:
         record_auth_attempt(mechanism, "inactive")
         raise InactiveUserError()
+
+    if not user.is_email_verified:
+        record_auth_attempt(mechanism, "unverified")
+        raise EmailNotVerifiedError()
 
     record_auth_attempt(mechanism, "success")
     return user

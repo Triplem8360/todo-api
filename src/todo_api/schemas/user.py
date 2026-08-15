@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
 
@@ -61,5 +62,32 @@ class UserResponseSchema(BaseModel):
     full_name: str | None
     is_active: bool
     is_superuser: bool
+    is_email_verified: bool
     created_at: datetime
     updated_at: datetime
+
+
+class RegistrationResponseSchema(UserResponseSchema):
+    verification_email_sent: bool
+
+
+class EmailVerificationResendRequestSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr = Field(max_length=255, examples=["user@example.com"])
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email_field(cls, value: EmailStr) -> str:
+        return normalize_email(str(value))
+
+
+class EmailVerificationAcceptedSchema(BaseModel):
+    detail: Literal["If an unverified account exists, a verification email will be sent."] = (
+        "If an unverified account exists, a verification email will be sent."
+    )
+
+
+class EmailVerificationResponseSchema(BaseModel):
+    email_verified: Literal[True] = True
+    detail: Literal["Email verified successfully."] = "Email verified successfully."

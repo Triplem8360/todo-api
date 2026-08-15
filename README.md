@@ -103,8 +103,13 @@ images after changing `pyproject.toml` or `uv.lock`.
 
 ## Authentication and OAuth
 
-Register through `POST /api/v1/auth/register`. The primary interactive flow is OAuth 2.0
-Authorization Code with mandatory PKCE/S256:
+Register through `POST /api/v1/auth/register`. Public registrations remain unverified until the
+single-use link delivered by email is opened. If delivery fails, registration still succeeds
+and returns `verification_email_sent: false`; request another link through
+`POST /api/v1/auth/email-verification/resend`. Unverified accounts cannot sign in.
+
+The primary interactive flow after verification is OAuth 2.0 Authorization Code with mandatory
+PKCE/S256:
 
 ```text
 GET  /api/v1/auth/authorize  -> validate the request and display the sign-in page

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,17 @@ def test_env_example_matches_settings_validation_aliases() -> None:
     validation_aliases = {str(field.validation_alias) for field in Settings.model_fields.values()}
 
     assert env_keys == validation_aliases
+
+
+def test_env_example_values_are_valid_settings() -> None:
+    env_example = Path(__file__).parents[2] / ".env.example"
+
+    settings = Settings(_env_file=env_example)
+
+    assert settings.refresh_session_absolute_ttl == timedelta(days=90)
+    assert settings.refresh_token_reuse_grace == timedelta(seconds=5)
+    assert settings.email_verification_token_ttl == timedelta(hours=24)
+    assert settings.email_verification_resend_cooldown == timedelta(seconds=60)
 
 
 def test_redis_is_the_default_cache_backend() -> None:
