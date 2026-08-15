@@ -5,7 +5,9 @@ All paths below use the `/api/v1` prefix.
 | Method | Path                      | Authentication            | Purpose                             |
 | ------ | ------------------------- | ------------------------- | ----------------------------------- |
 | GET    | `/health`                 | None                      | Liveness check                      |
-| POST   | `/auth/register`          | None                      | Register a user                     |
+| POST   | `/auth/register`          | None                      | Register and send a verification link |
+| GET    | `/auth/email-verification/confirm` | Opaque email token | Verify a registered email address |
+| POST   | `/auth/email-verification/resend` | None | Request another verification link |
 | POST   | `/auth/login`             | OAuth2 password form      | Create an independent login session |
 | GET    | `/auth/authorize`         | None                      | Display the authorization login     |
 | POST   | `/auth/authorize`         | Email and password form   | Issue an authorization code         |
@@ -31,6 +33,23 @@ All paths below use the `/api/v1` prefix.
 | GET    | `/todos/{todo_id}`        | Bearer access token       | Read an owned Todo                  |
 | PATCH  | `/todos/{todo_id}`        | Bearer access token       | Update an owned Todo                |
 | DELETE | `/todos/{todo_id}`        | Bearer access token       | Delete an owned Todo                |
+
+## Registration email verification
+
+Public registration creates an active but unverified account, generates a high-entropy opaque
+token, stores only its SHA-256 hash, and sends a multipart HTML/plain-text message. The response
+includes `is_email_verified: false` and `verification_email_sent`, so a client can offer the
+resend action when SMTP delivery fails without trying to register the address again.
+
+Opening the emailed `GET /auth/email-verification/confirm?token=...` link consumes the token and
+records `email_verified_at`. Tokens are single-use and expire after
+`EMAIL_VERIFICATION_TOKEN_TTL`. Login, OAuth authorization, refresh, Basic authentication, and
+other user-authentication paths reject unverified accounts.
+
+`POST /auth/email-verification/resend` accepts an email address and always returns the same
+`202` response. Missing accounts, verified accounts, and requests inside
+`EMAIL_VERIFICATION_RESEND_COOLDOWN` do not send mail, which limits abuse without exposing
+whether an address is registered. An eligible resend invalidates the previous token.
 
 ## Authorization Code + PKCE
 

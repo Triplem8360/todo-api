@@ -34,6 +34,7 @@ def test_refresh_token_rotates_the_session(settings: Settings) -> None:
         email="user@example.com",
         hashed_password="password-hash",
         is_active=True,
+        email_verified_at=datetime.now(UTC),
     )
     database_session = AsyncMock(spec=AsyncSession)
     database_session.scalar.return_value = record

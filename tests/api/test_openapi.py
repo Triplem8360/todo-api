@@ -9,6 +9,8 @@ def test_openapi_exposes_compact_authentication_surface(settings: Settings) -> N
 
     assert set(schema["paths"]) >= {
         "/api/v1/auth/register",
+        "/api/v1/auth/email-verification/confirm",
+        "/api/v1/auth/email-verification/resend",
         "/api/v1/auth/login",
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",

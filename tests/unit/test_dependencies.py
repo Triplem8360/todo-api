@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -34,6 +35,7 @@ def active_user() -> User:
         hashed_password="password-hash",
         is_active=True,
         is_superuser=False,
+        email_verified_at=datetime.now(UTC),
     )
 
 

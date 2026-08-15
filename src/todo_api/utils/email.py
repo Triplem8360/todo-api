@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from html import escape
+from urllib.parse import urlencode
+
 from fastapi_mail import ConnectionConfig
 
 from todo_api.core.config import Settings
@@ -7,6 +11,57 @@ from todo_api.core.config import Settings
 
 def normalize_email(email: str) -> str:
     return email.strip().casefold()
+
+
+@dataclass(frozen=True, slots=True)
+class VerificationEmail:
+    subject: str
+    html_body: str
+    plain_body: str
+
+
+def create_verification_email(
+    settings: Settings,
+    *,
+    token: str,
+    full_name: str | None,
+) -> VerificationEmail:
+    verification_url = f"{settings.email_verification_url}?{urlencode({'token': token})}"
+    greeting_name = full_name or "there"
+    safe_name = escape(greeting_name)
+    safe_url = escape(verification_url, quote=True)
+    ttl_hours = settings.email_verification_token_ttl.total_seconds() / 3600
+    ttl_label = f"{ttl_hours:g} hours"
+
+    subject = f"Verify your {settings.app_name} email"
+    plain_body = (
+        f"Hello {greeting_name},\n\n"
+        f"Verify your email address for {settings.app_name} by opening this link:\n"
+        f"{verification_url}\n\n"
+        f"This single-use link expires in {ttl_label}. "
+        "If you did not create this account, you can ignore this email."
+    )
+    html_body = f"""
+    <div style="font-family: sans-serif; line-height: 1.5; color: #1f2937">
+      <h2>Verify your email</h2>
+      <p>Hello {safe_name},</p>
+      <p>Confirm your email address to finish setting up your {escape(settings.app_name)} account.</p>
+      <p>
+        <a href="{safe_url}"
+           style="display: inline-block; padding: 10px 16px; color: white; background: #2563eb; text-decoration: none; border-radius: 6px">
+          Verify email
+        </a>
+      </p>
+      <p>This single-use link expires in {ttl_label}.</p>
+      <p>If you did not create this account, you can ignore this email.</p>
+    </div>
+    """.strip()
+
+    return VerificationEmail(
+        subject=subject,
+        html_body=html_body,
+        plain_body=plain_body,
+    )
 
 
 def create_mail_config(settings: Settings) -> ConnectionConfig:

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String, UniqueConstraint, false, true
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from todo_api.db.base import Base
@@ -28,6 +30,23 @@ class User(TimestampMixin, Base):
 
     full_name: Mapped[str | None] = mapped_column(String(150), default=None)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    email_verification_token_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=True,
+    )
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    email_verification_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
@@ -63,6 +82,10 @@ class User(TimestampMixin, Base):
         passive_deletes=True,
         lazy="raise",
     )
+
+    @property
+    def is_email_verified(self) -> bool:
+        return self.email_verified_at is not None
 
     def __repr__(self) -> str:
         return f"User(id={self.id!r}, email={self.email!r})"

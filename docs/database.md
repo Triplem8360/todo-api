@@ -24,11 +24,14 @@ The `users` table stores:
 
 * normalized email;
 * Argon2 password hash;
+* email-verification timestamp, token hash, expiry, and most recent request time;
 * profile fields;
 * active and superuser flags;
 * timestamps.
 
-The email unique constraint provides uniqueness and an indexed lookup.
+The email unique constraint provides uniqueness and an indexed lookup. Verification tokens are
+never stored directly: a nullable unique SHA-256 hash supports indexed, single-use lookup. The
+verification timestamp is backfilled for accounts that existed before the feature was added.
 
 Deleting a user cascades to their refresh sessions, authorization codes, API keys, and Todos.
 

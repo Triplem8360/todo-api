@@ -18,6 +18,21 @@ class RegistrationUnavailableError(AuthServiceError):
     public_message = "Registration could not be completed."
 
 
+class EmailNotVerifiedError(AuthServiceError):
+    error_code = "email_not_verified"
+    public_message = "Email verification is required before signing in."
+
+
+class InvalidEmailVerificationTokenError(AuthServiceError):
+    error_code = "invalid_email_verification_token"
+    public_message = "The email verification link is invalid or expired."
+
+
+class EmailVerificationUnavailableError(AuthServiceError):
+    error_code = "email_verification_unavailable"
+    public_message = "Email verification is temporarily unavailable."
+
+
 class InvalidCredentialsError(AuthServiceError):
     error_code = "invalid_credentials"
     public_message = "Incorrect email or password."

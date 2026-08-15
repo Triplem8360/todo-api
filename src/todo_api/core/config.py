@@ -205,12 +205,11 @@ class Settings(BaseSettings):
     mail_server: str = Field(default="localhost", min_length=1, validation_alias="MAIL_SERVER")
     mail_starttls: bool = Field(default=False, validation_alias="MAIL_STARTTLS")
     mail_ssl_tls: bool = Field(default=False, validation_alias="MAIL_SSL_TLS")
-    mail_debug: Literal[0, 1] = Field(default=0, validation_alias="MAIL_DEBUG")
+    mail_debug: int = Field(default=0, ge=0, le=1, validation_alias="MAIL_DEBUG")
     mail_from: EmailStr = Field(default="noreply@example.com", validation_alias="MAIL_FROM")
     mail_from_name: str | None = Field(default="Todo API", validation_alias="MAIL_FROM_NAME")
     mail_template_folder: DirectoryPath | None = Field(
-        default=None, 
-        validation_alias="TEMPLATE_FOLDER"
+        default=None, validation_alias="TEMPLATE_FOLDER"
     )
     mail_suppress_send: bool = Field(default=False, validation_alias="SUPPRESS_SEND")
     mail_use_credentials: bool = Field(default=False, validation_alias="USE_CREDENTIALS")
@@ -218,6 +217,20 @@ class Settings(BaseSettings):
     mail_timeout_seconds: int = Field(default=10, gt=0, le=300, validation_alias="TIMEOUT")
     mail_local_hostname: str | None = Field(default=None, validation_alias="LOCAL_HOSTNAME")
     mail_cert_bundle: Path | None = Field(default=None, validation_alias="CERT_BUNDLE")
+    email_verification_url: str = Field(
+        default="http://localhost:8000/api/v1/auth/email-verification/confirm",
+        validation_alias="EMAIL_VERIFICATION_URL",
+    )
+    email_verification_token_ttl: timedelta = Field(
+        default=timedelta(hours=24),
+        gt=timedelta(0),
+        validation_alias="EMAIL_VERIFICATION_TOKEN_TTL",
+    )
+    email_verification_resend_cooldown: timedelta = Field(
+        default=timedelta(seconds=60),
+        ge=timedelta(0),
+        validation_alias="EMAIL_VERIFICATION_RESEND_COOLDOWN",
+    )
 
     @field_validator(
         "mail_from_name",
@@ -239,6 +252,21 @@ class Settings(BaseSettings):
         if not server:
             raise ValueError("MAIL_SERVER must not be blank.")
         return server
+
+    @field_validator("email_verification_url")
+    @classmethod
+    def validate_email_verification_url(cls, value: str) -> str:
+        url = value.strip()
+        parsed = urlsplit(url)
+
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("EMAIL_VERIFICATION_URL must be an absolute HTTP(S) URL.")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("EMAIL_VERIFICATION_URL must not include user information.")
+        if parsed.query or parsed.fragment:
+            raise ValueError("EMAIL_VERIFICATION_URL must not include a query or fragment.")
+
+        return url
 
     @field_validator("allowed_hosts")
     @classmethod
@@ -418,6 +446,9 @@ class Settings(BaseSettings):
 
             if not self.auth_cookie_secure:
                 raise ValueError("AUTH_COOKIE_SECURE must be enabled in staging and production.")
+
+            if urlsplit(self.email_verification_url).scheme != "https":
+                raise ValueError("EMAIL_VERIFICATION_URL must use HTTPS in staging and production.")
 
             for origin in self.cors_allowed_origins:
                 parsed = urlsplit(origin)

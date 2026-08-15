@@ -20,6 +20,17 @@ API routes -> dependencies -> services -> repositories -> models -> PostgreSQL
 
 ## Authentication lifecycle
 
+### Registration and email verification
+
+Public registration stores an unverified user and a hash of a short-lived opaque token before
+attempting SMTP delivery. The plaintext token exists only in the generated email link. Confirming
+the link locks the matching user row, checks expiry, records `email_verified_at`, and clears the
+token fields in one transaction. Resending rotates the token and is protected by a persisted
+cooldown; the endpoint's generic response prevents account enumeration.
+
+Trusted CLI and seed workflows create verified users directly, and the migration marks existing
+users verified so deployment does not lock out established accounts.
+
 ### Authorization Code + PKCE
 
 The OpenAPI security scheme describes an OAuth 2.0 Authorization Code flow. The application

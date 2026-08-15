@@ -7,7 +7,7 @@ from fastapi_mail import MessageType
 
 from todo_api.core.config import Settings
 from todo_api.services.email import EmailService
-from todo_api.utils.email import create_mail_config
+from todo_api.utils.email import create_mail_config, create_verification_email
 
 TEST_SECRET = "test-secret-key-with-at-least-thirty-two-bytes"
 
@@ -78,3 +78,18 @@ def test_suppressed_connection_check_does_not_use_network() -> None:
     service = EmailService(mail_settings())
 
     assert asyncio.run(service.check_connection()) is False
+
+
+def test_verification_email_contains_a_safe_single_use_link() -> None:
+    message = create_verification_email(
+        mail_settings(),
+        token="opaque_token-value",
+        full_name="<Test User>",
+    )
+
+    assert (
+        "http://localhost:8000/api/v1/auth/email-verification/confirm" "?token=opaque_token-value"
+    ) in message.plain_body
+    assert "&lt;Test User&gt;" in message.html_body
+    assert "<Test User>" not in message.html_body
+    assert "multipart" not in message.subject.casefold()
