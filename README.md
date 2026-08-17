@@ -286,6 +286,21 @@ definitions stay aligned with the running application while their state is share
 
 ## Development
 
+### Load testing
+
+The optional Compose `loadtest` profile seeds verified test accounts and runs a realistic,
+authenticated Todo workload through Locust. Start its web UI with:
+
+```bash
+cp loadtests/.env.example loadtests/.env
+docker compose --env-file loadtests/.env -f compose.dev.yaml --profile loadtest up --build
+```
+
+Open `http://localhost:8089`. See [Load testing with Locust](docs/load-testing.md) for headless
+runs, workload weights, thresholds, result interpretation, and safety constraints.
+
+### Quality checks
+
 ```bash
 uv run pytest
 uv run black --check src tests scripts alembic
@@ -299,3 +314,4 @@ See:
 * [Architecture](docs/architecture.md)
 * [Database](docs/database.md)
 * [Email and smtp4dev](docs/email.md)
+* [Load testing with Locust](docs/load-testing.md)

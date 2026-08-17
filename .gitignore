@@ -20,6 +20,8 @@ env/
 .coverage.*
 htmlcov/
 coverage.xml
+loadtests/results/*
+!loadtests/results/.gitkeep
 
 # Type checking and linting
 .mypy_cache/

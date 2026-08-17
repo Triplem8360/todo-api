@@ -1,6 +1,7 @@
 name: todo-api
 
 x-app-environment: &app-environment
+  ALLOWED_HOSTS: '["localhost","127.0.0.1","api","testserver"]'
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-todo_user}:${POSTGRES_PASSWORD:-123}@db:5432/${POSTGRES_DB:-todo_db}
   REDIS_URL: redis://redis:6379/0
   MAIL_SERVER: smtp4dev
@@ -157,6 +158,105 @@ services:
         condition: service_healthy
       smtp4dev:
         condition: service_healthy
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).read()
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+    init: true
+
+
+  loadtest-seed:
+    <<: *app
+
+    profiles:
+      - loadtest
+
+    environment:
+      <<: *app-environment
+      TODO_API_SEED_PASSWORD: ${LOCUST_TEST_PASSWORD:-LocustPass123!}
+
+    volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+
+    command:
+      - python
+      - scripts/seed_database.py
+      - --seed
+      - ${LOCUST_TEST_SEED:-9001}
+      - --users
+      - ${LOCUST_TEST_USER_COUNT:-50}
+      - --inactive-rate
+      - "0"
+      - --todos-per-user
+      - ${LOCUST_SEED_TODOS_PER_USER:-20}
+      - --api-keys-per-user
+      - "0"
+      - --refresh-sessions-per-user
+      - "0"
+      - --oauth-codes-per-user
+      - "0"
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+    restart: "no"
+
+
+  locust:
+    image: locustio/locust:2.46.2
+
+    profiles:
+      - loadtest
+
+    environment:
+      LOCUST_LOCUSTFILE: /mnt/locust/locustfile.py
+      LOCUST_HOST: http://api:8000
+      LOCUST_WEB_HOST: 0.0.0.0
+      LOCUST_USERS: ${LOCUST_USERS:-5}
+      LOCUST_SPAWN_RATE: ${LOCUST_SPAWN_RATE:-1}
+      LOCUST_AUTOSTART: "${LOCUST_AUTOSTART:-false}"
+      LOCUST_RUN_TIME: ${LOCUST_RUN_TIME:-25s}
+      LOCUST_TEST_SEED: ${LOCUST_TEST_SEED:-9001}
+      LOCUST_TEST_USER_COUNT: ${LOCUST_TEST_USER_COUNT:-50}
+      LOCUST_TEST_PASSWORD: ${LOCUST_TEST_PASSWORD:-LocustPass123!}
+      LOCUST_MIN_WAIT_SECONDS: ${LOCUST_MIN_WAIT_SECONDS:-0.5}
+      LOCUST_MAX_WAIT_SECONDS: ${LOCUST_MAX_WAIT_SECONDS:-2.0}
+      LOCUST_MAX_TRACKED_TODOS: ${LOCUST_MAX_TRACKED_TODOS:-50}
+      LOCUST_FAILURE_RATIO_LIMIT: ${LOCUST_FAILURE_RATIO_LIMIT:-0.01}
+      LOCUST_P95_MS_LIMIT: ${LOCUST_P95_MS_LIMIT:-750}
+
+    ports:
+      - "127.0.0.1:${LOCUST_WEB_PORT:-8089}:8089"
+
+    volumes:
+      - ./loadtests:/mnt/locust:ro
+      - ./loadtests/results:/mnt/locust/results
+
+    command:
+      - --locustfile
+      - /mnt/locust/locustfile.py
+      - --host
+      - http://api:8000
+      - --web-host
+      - 0.0.0.0
+
+    depends_on:
+      api:
+        condition: service_healthy
+      loadtest-seed:
+        condition: service_completed_successfully
 
     init: true
 
