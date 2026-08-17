@@ -37,6 +37,7 @@ SEED_EMAIL_DOMAIN = "example.com"
 class SeedOptions:
     seed: int
     users: int
+    inactive_rate: float
     todos_per_user: int
     api_keys_per_user: int
     refresh_sessions_per_user: int
@@ -105,7 +106,7 @@ async def create_users(
         )
         users.append(user)
 
-        if index != 1 and rng.random() < 0.1:
+        if index != 1 and rng.random() < options.inactive_rate:
             inactive_user_ids.append(user.id)
 
     if inactive_user_ids:
@@ -356,12 +357,25 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def rate(value: str) -> float:
+    parsed = float(value)
+    if not 0 <= parsed <= 1:
+        raise argparse.ArgumentTypeError("value must be between zero and one")
+    return parsed
+
+
 def parse_args() -> SeedOptions:
     parser = argparse.ArgumentParser(
         description="Seed the local database with deterministic Persian fake data."
     )
     parser.add_argument("--seed", type=int, default=1405)
     parser.add_argument("--users", type=positive_int, default=10)
+    parser.add_argument(
+        "--inactive-rate",
+        type=rate,
+        default=0.1,
+        help="Fraction of non-superusers to mark inactive (0 through 1).",
+    )
     parser.add_argument("--todos-per-user", type=non_negative_int, default=10)
     parser.add_argument("--api-keys-per-user", type=non_negative_int, default=2)
     parser.add_argument(
@@ -385,6 +399,7 @@ def parse_args() -> SeedOptions:
     return SeedOptions(
         seed=args.seed,
         users=args.users,
+        inactive_rate=args.inactive_rate,
         todos_per_user=args.todos_per_user,
         api_keys_per_user=args.api_keys_per_user,
         refresh_sessions_per_user=args.refresh_sessions_per_user,

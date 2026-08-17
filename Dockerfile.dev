@@ -112,3 +112,4 @@ EXPOSE 8000
 
 
 CMD ["uvicorn", "todo_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+# CMD ["uvicorn", "todo_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
