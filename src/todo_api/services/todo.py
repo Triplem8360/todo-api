@@ -124,6 +124,8 @@ class TodoService:
             if requested_status is not None:
                 self._transition(todo, requested_status)
 
+            await self.session.flush()
+            await self.session.refresh(todo)
             await self.session.commit()
             return todo
         except (TodoNotFoundError, TodoStateConflictError):

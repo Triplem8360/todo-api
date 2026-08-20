@@ -7,7 +7,7 @@ from fastapi_mail import MessageType
 
 from todo_api.core.config import Settings
 from todo_api.services.email import EmailService
-from todo_api.utils.email import create_mail_config, create_verification_email
+from todo_api.utils.email import create_mail_config, create_verification_email, create_welcome_email
 
 TEST_SECRET = "test-secret-key-with-at-least-thirty-two-bytes"
 
@@ -93,3 +93,12 @@ def test_verification_email_contains_a_safe_single_use_link() -> None:
     assert "&lt;Test User&gt;" in message.html_body
     assert "<Test User>" not in message.html_body
     assert "multipart" not in message.subject.casefold()
+
+
+def test_welcome_email_escapes_the_recipient_name() -> None:
+    message = create_welcome_email(mail_settings(), full_name="<Test User>")
+
+    assert message.subject == "Welcome to Todo API"
+    assert "&lt;Test User&gt;" in message.html_body
+    assert "<Test User>" not in message.html_body
+    assert "Your Todo API account is ready" in message.plain_body

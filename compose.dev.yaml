@@ -4,6 +4,8 @@ x-app-environment: &app-environment
   ALLOWED_HOSTS: '["localhost","127.0.0.1","api","testserver"]'
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-todo_user}:${POSTGRES_PASSWORD:-123}@db:5432/${POSTGRES_DB:-todo_db}
   REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/2
+  CELERY_RESULT_BACKEND: redis://redis:6379/3
   MAIL_SERVER: smtp4dev
   MAIL_PORT: 25
   MAIL_STARTTLS: "false"
@@ -66,16 +68,19 @@ services:
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
 
+    volumes:
+      - redis_data:/data
+
     command:
       - redis-server
-      - --save
-      - ""
       - --appendonly
-      - "no"
+      - "yes"
+      - --appendfsync
+      - everysec
       - --maxmemory
-      - ${REDIS_MAX_MEMORY:-128mb}
+      - ${REDIS_MAX_MEMORY:-256mb}
       - --maxmemory-policy
-      - allkeys-lru
+      - noeviction
 
     healthcheck:
       test:
@@ -175,6 +180,30 @@ services:
     init: true
 
 
+  celery-worker:
+    <<: *app
+
+    volumes: *runtime-volumes
+
+    command:
+      - celery
+      - --app
+      - todo_api.background.celery_app:celery_app
+      - worker
+      - --loglevel
+      - ${CELERY_LOG_LEVEL:-INFO}
+      - --concurrency
+      - ${CELERY_WORKER_CONCURRENCY:-2}
+
+    depends_on:
+      redis:
+        condition: service_healthy
+      smtp4dev:
+        condition: service_healthy
+
+    init: true
+
+
   loadtest-seed:
     <<: *app
 
@@ -263,4 +292,5 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   smtp4dev_data:

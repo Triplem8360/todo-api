@@ -68,7 +68,14 @@ class UserResponseSchema(BaseModel):
 
 
 class RegistrationResponseSchema(UserResponseSchema):
-    verification_email_sent: bool
+    verification_email_queued: bool
+    verification_email_sent: bool = Field(
+        deprecated=True,
+        description=(
+            "Deprecated compatibility alias for verification_email_queued; background delivery "
+            "may still fail after the task is accepted."
+        ),
+    )
 
 
 class EmailVerificationResendRequestSchema(BaseModel):

@@ -89,6 +89,26 @@ class Settings(BaseSettings):
         min_length=1,
         validation_alias="APSCHEDULER_RUN_TIMES_KEY",
     )
+    celery_broker_url: str = Field(
+        default="redis://localhost:6379/2",
+        validation_alias="CELERY_BROKER_URL",
+        repr=False,
+    )
+    celery_result_backend: str = Field(
+        default="redis://localhost:6379/3",
+        validation_alias="CELERY_RESULT_BACKEND",
+        repr=False,
+    )
+    celery_result_expires_seconds: int = Field(
+        default=3_600,
+        ge=60,
+        le=604_800,
+        validation_alias="CELERY_RESULT_EXPIRES_SECONDS",
+    )
+    celery_task_always_eager: bool = Field(
+        default=False,
+        validation_alias="CELERY_TASK_ALWAYS_EAGER",
+    )
 
     database_url: str = Field(
         default="postgresql+asyncpg://todo:todo@localhost:5432/todo",
@@ -370,6 +390,22 @@ class Settings(BaseSettings):
 
         if parsed.fragment:
             raise ValueError("REDIS_URL must not include a fragment.")
+
+        return value
+
+    @field_validator("celery_broker_url", "celery_result_backend")
+    @classmethod
+    def require_celery_redis_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+
+        if parsed.scheme not in {"redis", "rediss"}:
+            raise ValueError("Celery Redis URLs must use the redis:// or rediss:// scheme.")
+
+        if not parsed.hostname:
+            raise ValueError("Celery Redis URLs must include a host.")
+
+        if parsed.fragment:
+            raise ValueError("Celery Redis URLs must not include a fragment.")
 
         return value
 

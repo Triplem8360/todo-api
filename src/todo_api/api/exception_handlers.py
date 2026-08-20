@@ -34,6 +34,11 @@ from todo_api.exceptions.oauth import (
     OAuthProtocolError,
     OAuthServiceError,
 )
+from todo_api.exceptions.todo import (
+    TodoNotFoundError,
+    TodoServiceError,
+    TodoStateConflictError,
+)
 from todo_api.exceptions.user import UserServiceError
 from todo_api.observability.metrics import record_registration
 
@@ -65,6 +70,9 @@ ERROR_CONFIG: dict[type[ApplicationError], ErrorConfig] = {
     APIKeyServiceError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
     UserServiceError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
     EmailServiceUnavailableError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
+    TodoNotFoundError: ErrorConfig(status.HTTP_404_NOT_FOUND),
+    TodoServiceError: ErrorConfig(status.HTTP_409_CONFLICT),
+    TodoStateConflictError: ErrorConfig(status.HTTP_503_SERVICE_UNAVAILABLE),
 }
 
 

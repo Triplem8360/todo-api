@@ -42,6 +42,10 @@ def test_redis_is_the_default_cache_backend() -> None:
     assert settings.apscheduler_redis_db == 1
     assert settings.apscheduler_jobs_key == "todo-api:apscheduler:jobs"
     assert settings.apscheduler_run_times_key == "todo-api:apscheduler:run-times"
+    assert settings.celery_broker_url == "redis://localhost:6379/2"
+    assert settings.celery_result_backend == "redis://localhost:6379/3"
+    assert settings.celery_result_expires_seconds == 3_600
+    assert settings.celery_task_always_eager is False
 
 
 @pytest.mark.parametrize(
@@ -59,6 +63,17 @@ def test_redis_url_requires_a_supported_absolute_url(redis_url: str) -> None:
             app_env="test",
             secret_key=TEST_SECRET,
             redis_url=redis_url,
+        )
+
+
+@pytest.mark.parametrize("field", ["celery_broker_url", "celery_result_backend"])
+def test_celery_requires_redis_urls(field: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="test",
+            secret_key=TEST_SECRET,
+            **{field: "amqp://localhost:5672"},
         )
 
 
