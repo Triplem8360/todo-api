@@ -238,10 +238,24 @@ post-commit invalidation remains best-effort.
 The original `InMemoryBackend` remains available with `CACHE_BACKEND=memory`. It avoids an
 external dependency and is useful in unit tests or a single-worker local environment. Every
 worker has an independent memory cache, however, so cross-worker invalidation is not possible.
-Both Compose definitions supply an ephemeral Redis cache at `redis://redis:6379/0` and publish it
-only on host loopback for direct host execution. They disable Redis persistence, limit cache
-memory to `REDIS_MAX_MEMORY` (`128mb` by default), and use `allkeys-lru` eviction when the limit
-is reached. Externally managed deployments continue to supply their own reachable `REDIS_URL`.
+Both Compose definitions supply Redis at `redis://redis:6379/0` and publish it only on host
+loopback for direct host execution. Because the instance also carries Celery work, it uses
+append-only persistence, a named volume, and `noeviction`. The `REDIS_MAX_MEMORY` limit defaults to
+`256mb`; writes fail visibly at capacity instead of silently evicting queued tasks. Externally
+managed deployments continue to supply their own reachable Redis URLs.
+
+### Celery email workers
+
+Registration and resend requests publish `send_registration_verification_email` to Redis DB 2.
+Email confirmation publishes `send_registration_welcome_email`. A separate Celery worker builds
+the multipart message and performs SMTP delivery, so API workers do not own task execution. Redis
+DB 3 stores task states and JSON results for `CELERY_RESULT_EXPIRES_SECONDS`.
+
+Publishing uses a thread-pool boundary because Celery's Redis producer is synchronous. A broker
+failure is logged and returned as a false queue-acceptance flag without rolling back the committed
+account. SMTP service failures retry with exponential backoff and jitter. Task-event argument
+representations redact recipients and verification tokens, while the actual broker is treated as
+sensitive infrastructure because it must carry those values to the worker.
 
 ### Scheduled maintenance
 

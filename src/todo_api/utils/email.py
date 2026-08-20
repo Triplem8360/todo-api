@@ -14,7 +14,7 @@ def normalize_email(email: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class VerificationEmail:
+class EmailContent:
     subject: str
     html_body: str
     plain_body: str
@@ -25,7 +25,7 @@ def create_verification_email(
     *,
     token: str,
     full_name: str | None,
-) -> VerificationEmail:
+) -> EmailContent:
     verification_url = f"{settings.email_verification_url}?{urlencode({'token': token})}"
     greeting_name = full_name or "there"
     safe_name = escape(greeting_name)
@@ -57,10 +57,35 @@ def create_verification_email(
     </div>
     """.strip()
 
-    return VerificationEmail(
+    return EmailContent(
         subject=subject,
         html_body=html_body,
         plain_body=plain_body,
+    )
+
+
+def create_welcome_email(settings: Settings, *, full_name: str | None) -> EmailContent:
+    greeting_name = full_name or "there"
+    safe_name = escape(greeting_name)
+    safe_app_name = escape(settings.app_name)
+
+    return EmailContent(
+        subject=f"Welcome to {settings.app_name}",
+        plain_body=(
+            f"Hello {greeting_name},\n\n"
+            f"Your {settings.app_name} account is ready. You can now sign in and start "
+            "organizing your todos.\n\n"
+            "Thanks for joining us."
+        ),
+        html_body=(
+            '<div style="font-family: sans-serif; line-height: 1.5; color: #1f2937">'
+            f"<h2>Welcome to {safe_app_name}</h2>"
+            f"<p>Hello {safe_name},</p>"
+            f"<p>Your {safe_app_name} account is ready. You can now sign in and start "
+            "organizing your todos.</p>"
+            "<p>Thanks for joining us.</p>"
+            "</div>"
+        ),
     )
 
 

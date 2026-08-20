@@ -52,10 +52,12 @@ raw MIME source, and SMTP session.
 
 ## Registration verification
 
-`POST /api/v1/auth/register` now creates an unverified account and synchronously attempts to send
-a multipart HTML/plain-text verification message. Delivery failure does not roll back a valid
-account; the response exposes `verification_email_sent: false` so the client can present a resend
-action. Open the message in smtp4dev and follow its single-use link:
+`POST /api/v1/auth/register` creates an unverified account and publishes a Celery task that sends
+a multipart HTML/plain-text verification message. A broker failure does not roll back a valid
+account; the response exposes `verification_email_queued: false` so the client can present a
+resend action. `verification_email_sent` remains as a deprecated compatibility alias and reflects
+queue acceptance, not completed SMTP delivery. Open the message in smtp4dev and follow its
+single-use link:
 
 ```http
 GET /api/v1/auth/email-verification/confirm?token=<opaque-token>
@@ -80,6 +82,9 @@ EMAIL_VERIFICATION_RESEND_COOLDOWN=PT60S
 
 The two duration values use ISO 8601 syntax: `PT24H` means 24 hours and `PT60S` means
 60 seconds.
+
+Successful confirmation queues a separate registration welcome email. See
+[Celery background tasks](celery.md) for the worker, retry, result-backend, and inspection details.
 
 Staging and production require an HTTPS verification URL. Existing accounts are marked verified
 by the migration, while trusted CLI and seed workflows continue creating verified accounts.

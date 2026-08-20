@@ -37,12 +37,14 @@ All paths below use the `/api/v1` prefix.
 ## Registration email verification
 
 Public registration creates an active but unverified account, generates a high-entropy opaque
-token, stores only its SHA-256 hash, and sends a multipart HTML/plain-text message. The response
-includes `is_email_verified: false` and `verification_email_sent`, so a client can offer the
-resend action when SMTP delivery fails without trying to register the address again.
+token, stores only its SHA-256 hash, and queues a multipart HTML/plain-text message through Celery.
+The response includes `is_email_verified: false` and `verification_email_queued`, so a client can
+offer the resend action when Redis rejects the task without trying to register the address again.
+The deprecated `verification_email_sent` alias mirrors queue acceptance for older clients; it does
+not confirm SMTP delivery.
 
 Opening the emailed `GET /auth/email-verification/confirm?token=...` link consumes the token and
-records `email_verified_at`. Tokens are single-use and expire after
+records `email_verified_at`, then queues a registration welcome email. Tokens are single-use and expire after
 `EMAIL_VERIFICATION_TOKEN_TTL`. Login, OAuth authorization, refresh, Basic authentication, and
 other user-authentication paths reject unverified accounts.
 
@@ -697,6 +699,9 @@ REDIS_SOCKET_TIMEOUT_SECONDS=2
 APSCHEDULER_REDIS_DB=1
 APSCHEDULER_JOBS_KEY=todo-api:apscheduler:jobs
 APSCHEDULER_RUN_TIMES_KEY=todo-api:apscheduler:run-times
+CELERY_BROKER_URL=redis://localhost:6379/2
+CELERY_RESULT_BACKEND=redis://localhost:6379/3
+CELERY_RESULT_EXPIRES_SECONDS=3600
 ```
 
 `CACHE_BACKEND` accepts `redis` or `memory`. Redis stores the same encoded response values under
@@ -714,6 +719,10 @@ APScheduler uses the same Redis server and credentials but overrides the logical
 `APSCHEDULER_REDIS_DB`, which defaults to DB 1. Its jobs and run-time index use the two configured
 `APSCHEDULER_*_KEY` values. The scheduler remains part of application startup and is required even
 when `CACHE_BACKEND=memory` is selected.
+
+Celery uses Redis DB 2 as its broker and DB 3 as its result backend. Email-task results expire after
+`CELERY_RESULT_EXPIRES_SECONDS`; see [Celery background tasks](celery.md) for worker and inspection
+commands.
 
 ### Update
 

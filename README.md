@@ -10,6 +10,7 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 * Argon2 password hashing and hashed API keys;
 * owner-scoped Todo CRUD, filtering, sorting, and pagination;
 * asynchronous SMTP delivery with a local smtp4dev inbox;
+* Celery background email delivery with Redis broker and result storage;
 * per-user Redis caching for Todo reads, with an in-memory option;
 * Redis-backed APScheduler maintenance jobs;
 * Alembic migrations and Prometheus metrics.
@@ -17,8 +18,8 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 ## Run locally
 
 Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), PostgreSQL, and a reachable Redis
-instance. `CACHE_BACKEND=memory` disables Redis for Todo caching, but the maintenance scheduler
-still requires Redis for its shared job store.
+instance. Run a Celery worker next to a host-run API to process registration emails; the Compose
+stacks start it automatically.
 
 ```bash
 uv sync --group dev
@@ -57,11 +58,10 @@ docker compose up --build
 ```
 
 Compose waits for PostgreSQL and Redis to become healthy, applies Alembic migrations, and then
-starts one API worker at `http://localhost:8000`. Redis is available to containers through the
-Compose network and is published only on `127.0.0.1:${REDIS_PORT:-6379}` for host-run API
-processes. It is configured as an ephemeral cache with a `128mb` default memory limit and
-`allkeys-lru` eviction. Override the limit with `REDIS_MAX_MEMORY`. Run the stack in the
-background with `-d` if preferred.
+starts the API at `http://localhost:8000` and a Celery worker. Redis is available to containers
+through the Compose network and is published only on `127.0.0.1:${REDIS_PORT:-6379}` for host-run
+processes. It uses append-only persistence, a `256mb` default limit, and `noeviction` so queued
+work is not silently discarded. Override the limit with `REDIS_MAX_MEMORY`.
 
 For development with source mounts and Uvicorn reload, combine the base and development files:
 
@@ -85,16 +85,19 @@ Useful commands:
 # Follow API logs
 docker compose logs -f api
 
+# Follow background-worker logs
+docker compose logs -f celery-worker
+
 # Apply migrations explicitly
 docker compose run --rm migrate
 
 # Run tests in the development image
 docker compose -f compose.yaml -f compose.dev.yaml run --rm api pytest
 
-# Stop containers while preserving PostgreSQL data
+# Stop containers while preserving PostgreSQL and Redis data
 docker compose down
 
-# Stop containers and delete the PostgreSQL volume
+# Stop containers and delete PostgreSQL, Redis, and smtp4dev volumes
 docker compose down --volumes
 ```
 
@@ -104,9 +107,10 @@ images after changing `pyproject.toml` or `uv.lock`.
 ## Authentication and OAuth
 
 Register through `POST /api/v1/auth/register`. Public registrations remain unverified until the
-single-use link delivered by email is opened. If delivery fails, registration still succeeds
-and returns `verification_email_sent: false`; request another link through
-`POST /api/v1/auth/email-verification/resend`. Unverified accounts cannot sign in.
+single-use link delivered by the Celery worker is opened. The response reports
+`verification_email_queued`; request another link through
+`POST /api/v1/auth/email-verification/resend` when publishing fails. A welcome email is queued
+after successful verification. Unverified accounts cannot sign in.
 
 The primary interactive flow after verification is OAuth 2.0 Authorization Code with mandatory
 PKCE/S256:
@@ -248,6 +252,9 @@ REDIS_SOCKET_TIMEOUT_SECONDS=2
 APSCHEDULER_REDIS_DB=1
 APSCHEDULER_JOBS_KEY=todo-api:apscheduler:jobs
 APSCHEDULER_RUN_TIMES_KEY=todo-api:apscheduler:run-times
+CELERY_BROKER_URL=redis://localhost:6379/2
+CELERY_RESULT_BACKEND=redis://localhost:6379/3
+CELERY_RESULT_EXPIRES_SECONDS=3600
 ```
 
 Cached responses expose `X-FastAPI-Cache: MISS` or `HIT`. They use
@@ -277,6 +284,9 @@ user. smtp4dev captures that message instead of delivering it externally.
 
 See [Email and smtp4dev](docs/email.md) for endpoint examples and an explanation of every
 FastAPI-Mail connection setting.
+
+See [Celery background tasks](docs/celery.md) for task flow, retry behavior, Redis database
+allocation, result inspection, worker scaling, and operational commands.
 
 APScheduler reuses the server, credentials, and timeout settings from `REDIS_URL`, overrides the
 logical database with `APSCHEDULER_REDIS_DB` (DB 1 by default), and stores jobs and next-run times
@@ -312,6 +322,7 @@ See:
 
 * [API](docs/api.md)
 * [Architecture](docs/architecture.md)
+* [Celery background tasks](docs/celery.md)
 * [Database](docs/database.md)
 * [Email and smtp4dev](docs/email.md)
 * [Load testing with Locust](docs/load-testing.md)

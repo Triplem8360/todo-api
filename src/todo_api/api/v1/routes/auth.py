@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from typing import Annotated
 
 from fastapi import (
@@ -13,16 +12,17 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_mail import MessageType
 
 from todo_api.api.deps import (
     AuthServiceDep,
-    EmailServiceDep,
     require_browser_csrf_token,
 )
 from todo_api.api.responses import error_response
+from todo_api.background.dispatch import (
+    enqueue_registration_verification_email,
+    enqueue_registration_welcome_email,
+)
 from todo_api.background.request_tasks import record_activity
-from todo_api.core.config import Settings
 from todo_api.core.cookies import (
     REFRESH_COOKIE_NAME,
     clear_browser_session_cookies,
@@ -43,7 +43,6 @@ from todo_api.exceptions.auth import (
     RegistrationUnavailableError,
     TokenRefreshUnavailableError,
 )
-from todo_api.exceptions.email import EmailServiceUnavailableError
 from todo_api.observability.metrics import record_auth_attempt, record_registration
 from todo_api.schemas.token import (
     BrowserSessionResponseSchema,
@@ -58,12 +57,8 @@ from todo_api.schemas.user import (
     UserCreateSchema,
     UserResponseSchema,
 )
-from todo_api.services.auth import PendingEmailVerification
-from todo_api.services.email import EmailService
-from todo_api.utils.email import create_verification_email
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
-logger = logging.getLogger(__name__)
 
 
 def _authentication_failure_outcome(error: AuthServiceError) -> str:
@@ -74,28 +69,6 @@ def _authentication_failure_outcome(error: AuthServiceError) -> str:
     if isinstance(error, (InvalidCredentialsError, InvalidRefreshTokenError)):
         return "invalid"
     return "error"
-
-
-async def _deliver_verification_email(
-    pending: PendingEmailVerification,
-    email_service: EmailService,
-    settings: Settings,
-) -> bool:
-    message = create_verification_email(
-        settings, token=pending.token, full_name=pending.user.full_name
-    )
-
-    try:
-        return await email_service.send(
-            recipient=pending.user.email,
-            subject=message.subject,
-            body=message.html_body,
-            subtype=MessageType.html,
-            alternative_body=message.plain_body,
-        )
-    except EmailServiceUnavailableError:
-        logger.exception("Verification email delivery failed", extra={"user_id": pending.user.id})
-        return False
 
 
 @router.post(
@@ -113,14 +86,21 @@ async def _deliver_verification_email(
     },
 )
 async def register(
+    request: Request,
     payload: UserCreateSchema,
     auth_service: AuthServiceDep,
-    email_service: EmailServiceDep,
     background_tasks: BackgroundTasks,
 ) -> RegistrationResponseSchema:
     pending = await auth_service.register_pending_verification(payload)
-    email_sent = await _deliver_verification_email(pending, email_service, auth_service.settings)
     user = pending.user
+    email_queued = await enqueue_registration_verification_email(
+        user_id=user.id,
+        recipient=user.email,
+        token=pending.token,
+        full_name=user.full_name,
+        request_id=request.state.request_id,
+        expires_at=pending.expires_at,
+    )
 
     record_registration("success")
     background_tasks.add_task(
@@ -133,7 +113,8 @@ async def register(
 
     return RegistrationResponseSchema(
         **UserResponseSchema.model_validate(user).model_dump(),
-        verification_email_sent=email_sent,
+        verification_email_queued=email_queued,
+        verification_email_sent=email_queued,
     )
 
 
@@ -150,18 +131,19 @@ async def register(
     },
 )
 async def resend_email_verification(
+    request: Request,
     payload: EmailVerificationResendRequestSchema,
     auth_service: AuthServiceDep,
-    email_service: EmailServiceDep,
-    background_tasks: BackgroundTasks,
 ) -> EmailVerificationAcceptedSchema:
     pending = await auth_service.request_email_verification(str(payload.email))
     if pending is not None:
-        background_tasks.add_task(
-            _deliver_verification_email,
-            pending,
-            email_service,
-            auth_service.settings,
+        await enqueue_registration_verification_email(
+            user_id=pending.user.id,
+            recipient=pending.user.email,
+            token=pending.token,
+            full_name=pending.user.full_name,
+            request_id=request.state.request_id,
+            expires_at=pending.expires_at,
         )
 
     return EmailVerificationAcceptedSchema()
@@ -183,6 +165,7 @@ async def resend_email_verification(
     },
 )
 async def confirm_email_verification(
+    request: Request,
     response: Response,
     service: AuthServiceDep,
     background_tasks: BackgroundTasks,
@@ -198,6 +181,12 @@ async def confirm_email_verification(
         user_id=user.id,
         resource_type="user",
         resource_id=user.id,
+    )
+    await enqueue_registration_welcome_email(
+        user_id=user.id,
+        recipient=user.email,
+        full_name=user.full_name,
+        request_id=request.state.request_id,
     )
     return EmailVerificationResponseSchema()
 
