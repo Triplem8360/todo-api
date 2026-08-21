@@ -123,8 +123,66 @@ services:
       - ${CELERY_LOG_LEVEL:-INFO}
       - --concurrency
       - ${CELERY_WORKER_CONCURRENCY:-2}
+      - --queues
+      - default,emails
 
     depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      disable: true
+
+    restart: unless-stopped
+    init: true
+
+
+  celery-maintenance-worker:
+    <<: *app
+
+    command:
+      - celery
+      - --app
+      - todo_api.background.celery_app:celery_app
+      - worker
+      - --loglevel
+      - ${CELERY_LOG_LEVEL:-INFO}
+      - --concurrency
+      - ${CELERY_MAINTENANCE_WORKER_CONCURRENCY:-1}
+      - --queues
+      - maintenance
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      disable: true
+
+    restart: unless-stopped
+    init: true
+
+
+  celery-beat:
+    <<: *app
+
+    command:
+      - celery
+      - --app
+      - todo_api.background.celery_app:celery_app
+      - beat
+      - --loglevel
+      - ${CELERY_LOG_LEVEL:-INFO}
+      - --schedule
+      - /tmp/celerybeat-schedule
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 

@@ -55,6 +55,12 @@ class Todo(TimestampMixin, Base):
         Index("ix_todos_user_status", "user_id", "status"),
         Index("ix_todos_user_due_at", "user_id", "due_at"),
         Index("ix_todos_user_archived", "user_id", "is_archived"),
+        Index(
+            "ix_todos_status_archived_completed_at",
+            "status",
+            "is_archived",
+            "completed_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

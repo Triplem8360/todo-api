@@ -33,7 +33,7 @@ async def _send_message(*, settings: Settings, recipient: str, message: EmailCon
 
 
 @celery_app.task(
-    name="todo_api.send_registration_verification_email",
+    name="todo_api.email.send_registration_verification_email",
     **_EMAIL_TASK_OPTIONS,
 )
 def send_registration_verification_email(
@@ -51,7 +51,7 @@ def send_registration_verification_email(
 
 
 @celery_app.task(
-    name="todo_api.send_registration_welcome_email",
+    name="todo_api.email.send_registration_welcome_email",
     **_EMAIL_TASK_OPTIONS,
 )
 def send_registration_welcome_email(

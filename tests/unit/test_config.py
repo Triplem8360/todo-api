@@ -46,6 +46,7 @@ def test_redis_is_the_default_cache_backend() -> None:
     assert settings.celery_result_backend == "redis://localhost:6379/3"
     assert settings.celery_result_expires_seconds == 3_600
     assert settings.celery_task_always_eager is False
+    assert settings.completed_todo_auto_archive_days == 30
 
 
 @pytest.mark.parametrize(

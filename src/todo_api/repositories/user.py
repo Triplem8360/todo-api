@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from todo_api.models.user import User
@@ -46,3 +46,25 @@ async def create_user(
     await session.flush()
 
     return user
+
+
+async def clear_expired_email_verification_tokens(
+    session: AsyncSession,
+    *,
+    expired_at: datetime,
+) -> int:
+    result = await session.execute(
+        update(User)
+        .where(
+            User.email_verified_at.is_(None),
+            User.email_verification_token_hash.is_not(None),
+            User.email_verification_expires_at <= expired_at,
+        )
+        .values(
+            email_verification_token_hash=None,
+            email_verification_expires_at=None,
+            email_verification_requested_at=None,
+        )
+    )
+    rowcount = getattr(result, "rowcount", 0)
+    return max(rowcount, 0) if isinstance(rowcount, int) else 0

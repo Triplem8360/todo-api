@@ -10,16 +10,16 @@ An asynchronous FastAPI and PostgreSQL service featuring:
 * Argon2 password hashing and hashed API keys;
 * owner-scoped Todo CRUD, filtering, sorting, and pagination;
 * asynchronous SMTP delivery with a local smtp4dev inbox;
-* Celery background email delivery with Redis broker and result storage;
+* Celery background email delivery and Beat-scheduled maintenance;
 * per-user Redis caching for Todo reads, with an in-memory option;
-* Redis-backed APScheduler maintenance jobs;
+* Redis-backed APScheduler pruning jobs;
 * Alembic migrations and Prometheus metrics.
 
 ## Run locally
 
 Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), PostgreSQL, and a reachable Redis
-instance. Run a Celery worker next to a host-run API to process registration emails; the Compose
-stacks start it automatically.
+instance. Run the email and maintenance workers plus one Celery Beat process next to a host-run
+API; the Compose stacks start them automatically.
 
 ```bash
 uv sync --group dev
@@ -58,10 +58,11 @@ docker compose up --build
 ```
 
 Compose waits for PostgreSQL and Redis to become healthy, applies Alembic migrations, and then
-starts the API at `http://localhost:8000` and a Celery worker. Redis is available to containers
-through the Compose network and is published only on `127.0.0.1:${REDIS_PORT:-6379}` for host-run
-processes. It uses append-only persistence, a `256mb` default limit, and `noeviction` so queued
-work is not silently discarded. Override the limit with `REDIS_MAX_MEMORY`.
+starts the API at `http://localhost:8000`, dedicated email and maintenance workers, and Celery
+Beat. Redis is available to containers through the Compose network and is published only on
+`127.0.0.1:${REDIS_PORT:-6379}` for host-run processes. It uses append-only persistence, a `256mb`
+default limit, and `noeviction` so queued work is not silently discarded. Override the limit with
+`REDIS_MAX_MEMORY`.
 
 For development with source mounts and Uvicorn reload, combine the base and development files:
 
@@ -85,8 +86,11 @@ Useful commands:
 # Follow API logs
 docker compose logs -f api
 
-# Follow background-worker logs
-docker compose logs -f celery-worker
+# Follow email and maintenance worker logs
+docker compose logs -f celery-worker celery-maintenance-worker
+
+# Follow periodic-scheduler logs
+docker compose logs -f celery-beat
 
 # Apply migrations explicitly
 docker compose run --rm migrate
@@ -255,6 +259,9 @@ APSCHEDULER_RUN_TIMES_KEY=todo-api:apscheduler:run-times
 CELERY_BROKER_URL=redis://localhost:6379/2
 CELERY_RESULT_BACKEND=redis://localhost:6379/3
 CELERY_RESULT_EXPIRES_SECONDS=3600
+CELERY_WORKER_CONCURRENCY=2
+CELERY_MAINTENANCE_WORKER_CONCURRENCY=1
+COMPLETED_TODO_AUTO_ARCHIVE_DAYS=30
 ```
 
 Cached responses expose `X-FastAPI-Cache: MISS` or `HIT`. They use
@@ -285,14 +292,14 @@ user. smtp4dev captures that message instead of delivering it externally.
 See [Email and smtp4dev](docs/email.md) for endpoint examples and an explanation of every
 FastAPI-Mail connection setting.
 
-See [Celery background tasks](docs/celery.md) for task flow, retry behavior, Redis database
-allocation, result inspection, worker scaling, and operational commands.
+See [Celery background tasks](docs/celery.md) for email-task flow, the Beat maintenance schedule,
+retry behavior, result inspection, worker scaling, and operational commands. Only one Beat process
+should run per deployment. Beat clears unusable verification credentials and archives completed
+Todos after the configured retention period.
 
-APScheduler reuses the server, credentials, and timeout settings from `REDIS_URL`, overrides the
-logical database with `APSCHEDULER_REDIS_DB` (DB 1 by default), and stores jobs and next-run times
-under the two configured keys. The scheduler and its maintenance jobs are still created and
-started during the FastAPI lifespan. Existing job IDs are replaced at startup, so interval
-definitions stay aligned with the running application while their state is shared through Redis.
+The API lifespan also runs the original `AsyncIOScheduler` with its Redis job store in logical DB
+1. APScheduler exclusively owns OAuth authorization-code and refresh-session pruning, so those jobs
+are not duplicated by Celery Beat.
 
 ## Development
 

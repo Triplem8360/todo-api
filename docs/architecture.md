@@ -244,10 +244,10 @@ append-only persistence, a named volume, and `noeviction`. The `REDIS_MAX_MEMORY
 `256mb`; writes fail visibly at capacity instead of silently evicting queued tasks. Externally
 managed deployments continue to supply their own reachable Redis URLs.
 
-### Celery email workers
+### Celery workers and Beat
 
 Registration and resend requests publish `send_registration_verification_email` to Redis DB 2.
-Email confirmation publishes `send_registration_welcome_email`. A separate Celery worker builds
+Email confirmation publishes `send_registration_welcome_email`. A dedicated email worker builds
 the multipart message and performs SMTP delivery, so API workers do not own task execution. Redis
 DB 3 stores task states and JSON results for `CELERY_RESULT_EXPIRES_SECONDS`.
 
@@ -259,22 +259,32 @@ sensitive infrastructure because it must carry those values to the worker.
 
 ### Scheduled maintenance
 
-The application creates and starts an `AsyncIOScheduler` during the FastAPI lifespan, after the
-database health check succeeds. It continues to run the OAuth authorization-code and refresh-
-session pruning functions, including their existing completion logs, and shuts down before cache
-and database resources are released.
+A Redis-backed `AsyncIOScheduler` starts and stops with the FastAPI lifespan. It exclusively runs
+the two original pruning jobs: expired OAuth authorization codes every five minutes and expired
+refresh sessions every ten seconds. Stable job IDs, replacement semantics, coalescing, and a
+single-instance limit prevent duplicate definitions and overlapping runs inside one API process.
+Its persistent job definitions and next-run times use logical Redis DB 1 and the configured
+`APSCHEDULER_*_KEY` namespaces.
 
-The scheduler uses APScheduler's Redis job store. It reuses the endpoint and credentials parsed
-from `REDIS_URL`, while `APSCHEDULER_REDIS_DB` selects a separate logical database (DB 1 by
-default). `APSCHEDULER_JOBS_KEY` and `APSCHEDULER_RUN_TIMES_KEY` namespace the job definitions and
-next-run-time index. Redis connection and socket timeouts use the existing `REDIS_*_TIMEOUT_SECONDS`
-settings.
+A single Celery Beat process owns the remaining two schedules: expired email-verification
+credentials every thirty seconds and old completed Todo auto-archiving daily. Each message
+expires before its next useful run so a long broker backlog cannot cause a burst of obsolete
+maintenance work. The pruning jobs are deliberately absent from Beat to avoid two schedulers
+performing the same database work.
 
-Live SQLAlchemy engines cannot be serialized into persistent APScheduler jobs. The stored jobs
-therefore point to module-level scheduled entry points with no database argument; those entry
-points resolve the database created for the current application lifespan and then call the same
-maintenance functions. Stable job IDs and `replace_existing=True` refresh each interval definition
-at application startup without accumulating duplicate definitions.
+The dedicated maintenance worker defaults to one child process. After Celery forks, that process
+creates one long-lived event loop and lazily creates one async SQLAlchemy engine on it. Both are
+reused across maintenance tasks; graceful shutdown disposes the engine on its owning loop. Each job
+performs one set-based transaction and returns the affected-row count for operational inspection.
+Database failures retry three times with exponential backoff and jitter; re-delivery is safe
+because every operation is idempotent. Auto-archiving is reversible and can be disabled with
+`COMPLETED_TODO_AUTO_ARCHIVE_DAYS=0`.
+
+Beat is a deployment-level singleton rather than part of FastAPI's lifespan. The general worker
+consumes `default` and `emails`, while the dedicated maintenance worker consumes `maintenance`, so
+operators can scale and inspect the workloads independently. Because APScheduler remains tied to
+the API lifespan, deployments should keep one scheduler-owning API process unless they add a
+distributed scheduler lock.
 
 ## API keys
 

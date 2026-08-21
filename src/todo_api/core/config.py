@@ -109,6 +109,12 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="CELERY_TASK_ALWAYS_EAGER",
     )
+    completed_todo_auto_archive_days: int = Field(
+        default=30,
+        ge=0,
+        le=3_650,
+        validation_alias="COMPLETED_TODO_AUTO_ARCHIVE_DAYS",
+    )
 
     database_url: str = Field(
         default="postgresql+asyncpg://todo:todo@localhost:5432/todo",
