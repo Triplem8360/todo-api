@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,8 +62,9 @@ def test_consume_authorization_code_updates_instead_of_deleting() -> None:
 
 def test_prune_expired_authorization_codes_uses_the_expiration_index() -> None:
     session = AsyncMock(spec=AsyncSession)
+    session.execute.return_value = Mock(rowcount=2)
 
-    asyncio.run(
+    deleted = asyncio.run(
         prune_expired_authorization_codes(
             session,
             expired_at=datetime.now(UTC),
@@ -71,5 +72,6 @@ def test_prune_expired_authorization_codes_uses_the_expiration_index() -> None:
     )
 
     statement = session.execute.await_args.args[0]
+    assert deleted == 2
     assert statement.is_delete
     assert "expires_at" in str(statement)

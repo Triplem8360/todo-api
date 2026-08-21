@@ -31,16 +31,14 @@ async def create_authorization_code(
     return record
 
 
-async def prune_expired_authorization_codes(
-    session: AsyncSession,
-    *,
-    expired_at: datetime,
-) -> None:
-    await session.execute(
+async def prune_expired_authorization_codes(session: AsyncSession, *, expired_at: datetime) -> int:
+    result = await session.execute(
         delete(OAuthAuthorizationCode).where(
             OAuthAuthorizationCode.expires_at <= expired_at,
         )
     )
+    rowcount = getattr(result, "rowcount", 0)
+    return max(rowcount, 0) if isinstance(rowcount, int) else 0
 
 
 async def consume_authorization_code(

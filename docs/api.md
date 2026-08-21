@@ -702,6 +702,7 @@ APSCHEDULER_RUN_TIMES_KEY=todo-api:apscheduler:run-times
 CELERY_BROKER_URL=redis://localhost:6379/2
 CELERY_RESULT_BACKEND=redis://localhost:6379/3
 CELERY_RESULT_EXPIRES_SECONDS=3600
+COMPLETED_TODO_AUTO_ARCHIVE_DAYS=30
 ```
 
 `CACHE_BACKEND` accepts `redis` or `memory`. Redis stores the same encoded response values under
@@ -716,13 +717,14 @@ database reads or committed Todo writes; they are logged, and the TTL bounds sta
 behind after a failed invalidation.
 
 APScheduler uses the same Redis server and credentials but overrides the logical database with
-`APSCHEDULER_REDIS_DB`, which defaults to DB 1. Its jobs and run-time index use the two configured
-`APSCHEDULER_*_KEY` values. The scheduler remains part of application startup and is required even
-when `CACHE_BACKEND=memory` is selected.
+`APSCHEDULER_REDIS_DB`, which defaults to DB 1. Its two Redis keys persist the OAuth-code and
+refresh-session pruning schedules across API restarts.
 
-Celery uses Redis DB 2 as its broker and DB 3 as its result backend. Email-task results expire after
-`CELERY_RESULT_EXPIRES_SECONDS`; see [Celery background tasks](celery.md) for worker and inspection
-commands.
+Celery uses Redis DB 2 as its broker and DB 3 as its result backend. Celery Beat publishes periodic
+verification cleanup and Todo archival to the `maintenance` queue, while request-driven email work
+uses the `emails` queue. Task results expire after `CELERY_RESULT_EXPIRES_SECONDS`. Completed Todos
+are archived after `COMPLETED_TODO_AUTO_ARCHIVE_DAYS`; set it to `0` to disable that Beat job. See
+[Celery background tasks](celery.md) for the schedules and inspection commands.
 
 ### Update
 

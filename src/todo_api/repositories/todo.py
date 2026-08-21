@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -161,8 +161,19 @@ async def list_owned_todos(
     return items, total
 
 
-async def delete_todo(
-    session: AsyncSession,
-    todo: Todo,
-) -> None:
+async def delete_todo(session: AsyncSession, todo: Todo) -> None:
     await session.delete(todo)
+
+
+async def archive_completed_todos(session: AsyncSession, *, completed_before: datetime) -> int:
+    result = await session.execute(
+        update(Todo)
+        .where(
+            Todo.status == TodoStatus.DONE,
+            Todo.is_archived.is_(False),
+            Todo.completed_at <= completed_before,
+        )
+        .values(is_archived=True)
+    )
+    rowcount = getattr(result, "rowcount", 0)
+    return max(rowcount, 0) if isinstance(rowcount, int) else 0
