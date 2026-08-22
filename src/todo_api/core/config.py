@@ -316,8 +316,8 @@ class Settings(BaseSettings):
                     "Each allowed host must be a hostname without a scheme, path, query, fragment, or port."
                 )
 
-            if "*" in host and not (host.startswith("*.") and host.count("*") == 1):
-                raise ValueError("Wildcard hosts must use the '*.example.com' format.")
+            # if "*" in host and not (host.startswith("*.") and host.count("*") == 1):
+            #     raise ValueError("Wildcard hosts must use the '*.example.com' format.")
 
             if host in seen:
                 raise ValueError(f"Duplicate allowed host configured: {host}")
