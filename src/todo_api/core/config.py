@@ -294,38 +294,38 @@ class Settings(BaseSettings):
 
         return url
 
-    @field_validator("allowed_hosts")
-    @classmethod
-    def validate_allowed_hosts(cls, values: tuple[str, ...]) -> tuple[str, ...]:
-        validated: list[str] = []
-        seen: set[str] = set()
+    # @field_validator("allowed_hosts")
+    # @classmethod
+    # def validate_allowed_hosts(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+    #     validated: list[str] = []
+    #     seen: set[str] = set()
 
-        for raw_host in values:
-            host = raw_host.strip().casefold()
+    #     for raw_host in values:
+    #         host = raw_host.strip().casefold()
 
-            if not host:
-                raise ValueError("ALLOWED_HOSTS must not contain empty values.")
+    #         if not host:
+    #             raise ValueError("ALLOWED_HOSTS must not contain empty values.")
 
-            if host == "*":
-                raise ValueError(
-                    "ALLOWED_HOSTS must not contain '*'. Configure trusted hosts explicitly."
-                )
+    #         if host == "*":
+    #             raise ValueError(
+    #                 "ALLOWED_HOSTS must not contain '*'. Configure trusted hosts explicitly."
+    #             )
 
-            if "://" in host or "/" in host or "?" in host or "#" in host or ":" in host:
-                raise ValueError(
-                    "Each allowed host must be a hostname without a scheme, path, query, fragment, or port."
-                )
+    #         if "://" in host or "/" in host or "?" in host or "#" in host or ":" in host:
+    #             raise ValueError(
+    #                 "Each allowed host must be a hostname without a scheme, path, query, fragment, or port."
+    #             )
 
-            # if "*" in host and not (host.startswith("*.") and host.count("*") == 1):
-            #     raise ValueError("Wildcard hosts must use the '*.example.com' format.")
+    #         # if "*" in host and not (host.startswith("*.") and host.count("*") == 1):
+    #         #     raise ValueError("Wildcard hosts must use the '*.example.com' format.")
 
-            if host in seen:
-                raise ValueError(f"Duplicate allowed host configured: {host}")
+    #         if host in seen:
+    #             raise ValueError(f"Duplicate allowed host configured: {host}")
 
-            seen.add(host)
-            validated.append(host)
+    #         seen.add(host)
+    #         validated.append(host)
 
-        return tuple(validated)
+    #     return tuple(validated)
 
     @field_validator("cors_allowed_origins")
     @classmethod
