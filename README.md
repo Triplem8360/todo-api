@@ -119,9 +119,9 @@ GitHub Actions uses descriptive workflow filenames under `.github/workflows`:
   the production `Dockerfile` as a non-root user. It runs for version tags matching `v*.*.*` and
   manual dispatches.
 * `darkube-deployment.yml` replaces the generic `main.yml` name. On every push to `main`, its
-  separate `build` job uses the production `Dockerfile` to push `main` and seven-character commit
-  tags. The dependent `deploy` job then deploys that exact commit tag to the protected `staging`
-  GitHub environment through Darkube.
+  separate `build` job uses `Dockerfile.dev`, as configured for the Darkube application, to push
+  `main` and seven-character commit tags. The dependent `deploy` job then deploys that exact
+  commit tag to the protected `staging` GitHub environment through Darkube.
 
 The workflow filename is not part of GitHub Actions execution semantics, so renaming `main.yml`
 does not change its triggers. Update any README badge or external link that points to the old path.
