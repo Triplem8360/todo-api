@@ -46,7 +46,7 @@ jobs:
           -t "$IMAGE_NAME:main"
           --docker-auth-config "$DOCKER_AUTH_CONFIG"
           --workdir .
-          --file ./Dockerfile
+          --file ./Dockerfile.dev
           --build-context .
 
   deploy:
