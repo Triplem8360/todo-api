@@ -1,0 +1,94 @@
+name: Development CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: development-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Test and build development image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:17.10-alpine3.24
+        env:
+          POSTGRES_DB: todo
+          POSTGRES_USER: todo
+          POSTGRES_PASSWORD: todo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U todo -d todo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7.4.10-alpine3.21
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.32"
+          enable-cache: true
+
+      - name: Install development dependencies
+        run: |
+          uv python install 3.11
+          uv sync --locked --group dev
+
+      - name: Check lockfile and formatting
+        run: |
+          uv lock --check
+          uv run black --check src tests
+
+      - name: Validate development configuration
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+          SECRET_KEY: ci-only-secret-key-with-at-least-thirty-two-bytes
+        run: |
+          cp .env.example .env
+          sed -i 's/^APP_ENV=.*/APP_ENV=test/' .env
+          docker compose -f compose.dev.yaml config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+
+      - name: Validate migrations
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
+      - name: Run tests
+        run: uv run pytest --cov=todo_api --cov-report=term-missing
+
+      - name: Build development image
+        run: docker build --pull --file Dockerfile.dev --tag todo-api:ci-dev .
+
+      - name: Smoke-test development image
+        run: |
+          test "$(docker image inspect todo-api:ci-dev --format '{{.Config.User}}')" = "app"
+          docker run --rm --network none --entrypoint python todo-api:ci-dev \
+            -c "from todo_api.main import app; assert app.title"

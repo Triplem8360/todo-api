@@ -1,0 +1,43 @@
+name: Production CI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+concurrency:
+  group: production-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build production image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate production configuration
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+          SECRET_KEY: ci-only-secret-key-with-at-least-thirty-two-bytes
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Build production image
+        run: docker build --pull --file Dockerfile --tag todo-api:ci-production .
+
+      - name: Smoke-test production image
+        run: |
+          test "$(docker image inspect todo-api:ci-production --format '{{.Config.User}}')" = "app"
+          docker run --rm --network none --entrypoint python todo-api:ci-production \
+            -c "from todo_api.main import app; assert app.title"

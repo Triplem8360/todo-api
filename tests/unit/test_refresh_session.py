@@ -13,6 +13,7 @@ def make_session() -> RefreshSession:
         user_id=1,
         token_hash="a" * 64,
         expires_at=datetime.now(UTC) + timedelta(days=1),
+        absolute_expires_at=datetime.now(UTC) + timedelta(days=30),
     )
 
 

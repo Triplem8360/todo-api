@@ -291,7 +291,7 @@ async def authorization_page(
         service.validate_authorization_request(request)
     except OAuthProtocolError as exc:
         return _redirect_authorization_error(
-            oauth,
+            service,
             exc,
             client_id=client_id,
             redirect_uri=redirect_uri,

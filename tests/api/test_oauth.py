@@ -88,7 +88,7 @@ def test_authorization_code_response_uses_post_redirect_get(settings: Settings) 
 
     response = asyncio.run(
         authorize(
-            oauth=service,
+            service=service,
             email="user@example.com",
             password="correct-password",
             **parameters,
