@@ -18,25 +18,18 @@ jobs:
     name: Test and build development image
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    env:
-      APP_ENV: test
-      DATABASE_URL: postgresql+asyncpg://todo_user:123@localhost:5432/todo_db
-      REDIS_URL: redis://localhost:6379/0
-      CELERY_BROKER_URL: redis://localhost:6379/2
-      CELERY_RESULT_BACKEND: redis://localhost:6379/3
-      SECRET_KEY: ci-only-secret-key-with-at-least-thirty-two-bytes
 
     services:
       postgres:
         image: postgres:17.10-alpine3.24
         env:
-          POSTGRES_DB: todo_db
-          POSTGRES_USER: todo_user
-          POSTGRES_PASSWORD: "123"
+          POSTGRES_DB: todo
+          POSTGRES_USER: todo
+          POSTGRES_PASSWORD: todo
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U todo_user -d todo_db"
+          --health-cmd "pg_isready -U todo -d todo"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -79,6 +72,7 @@ jobs:
           SECRET_KEY: ci-only-secret-key-with-at-least-thirty-two-bytes
         run: |
           cp .env.example .env
+          sed -i 's/^APP_ENV=.*/APP_ENV=test/' .env
           docker compose -f compose.dev.yaml config --quiet
           docker compose -f compose.yaml -f compose.dev.yaml config --quiet
 

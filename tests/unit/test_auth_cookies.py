@@ -32,6 +32,7 @@ from todo_api.core.cookies import (
     API_COOKIE_PATH,
     BROWSER_AUTH_COOKIE_PATH,
     CSRF_COOKIE_NAME,
+    CSRF_COOKIE_PATH,
     REFRESH_COOKIE_NAME,
     clear_browser_session_cookies,
     set_browser_session_cookies,
@@ -159,7 +160,7 @@ def test_browser_session_cookies_are_scoped_and_hardened(
     assert f"Path={BROWSER_AUTH_COOKIE_PATH}" in cookies[REFRESH_COOKIE_NAME]
     assert "HttpOnly" in cookies[REFRESH_COOKIE_NAME]
 
-    assert f"Path={API_COOKIE_PATH}" in cookies[CSRF_COOKIE_NAME]
+    assert f"Path={CSRF_COOKIE_PATH}" in cookies[CSRF_COOKIE_NAME]
     assert "HttpOnly" not in cookies[CSRF_COOKIE_NAME]
 
     for header in cookies.values():
@@ -195,7 +196,7 @@ def test_clearing_browser_session_uses_original_cookie_paths(
 
     assert f"Path={API_COOKIE_PATH}" in cookies[ACCESS_COOKIE_NAME]
     assert f"Path={BROWSER_AUTH_COOKIE_PATH}" in cookies[REFRESH_COOKIE_NAME]
-    assert f"Path={API_COOKIE_PATH}" in cookies[CSRF_COOKIE_NAME]
+    assert f"Path={CSRF_COOKIE_PATH}" in cookies[CSRF_COOKIE_NAME]
     assert all("Max-Age=0" in header for header in cookies.values())
 
 

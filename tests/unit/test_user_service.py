@@ -13,7 +13,7 @@ from todo_api.exceptions.user import (
 )
 from todo_api.models.user import User
 from todo_api.schemas.user import UserProfileUpdateSchema
-from todo_api.services.user import deactivate_user_account, update_user_profile
+from todo_api.services.user import UserService
 
 
 def active_user() -> User:
@@ -30,9 +30,10 @@ def active_user() -> User:
 def test_update_user_profile_normalizes_name_and_commits() -> None:
     user = active_user()
     session = AsyncMock(spec=AsyncSession)
+    service = UserService(session=session)
     payload = UserProfileUpdateSchema(full_name="  New   Name  ")
 
-    updated = asyncio.run(update_user_profile(session, user, payload))
+    updated = asyncio.run(service.update_profile(user, payload))
 
     assert updated is user
     assert user.full_name == "New Name"
@@ -44,23 +45,19 @@ def test_update_user_profile_normalizes_name_and_commits() -> None:
 def test_update_user_profile_maps_database_failure() -> None:
     user = active_user()
     session = AsyncMock(spec=AsyncSession)
+    service = UserService(session=session)
     session.flush.side_effect = SQLAlchemyError("database unavailable")
 
     with pytest.raises(ProfileUpdateUnavailableError):
-        asyncio.run(
-            update_user_profile(
-                session,
-                user,
-                UserProfileUpdateSchema(full_name=None),
-            )
-        )
+        asyncio.run(service.update_profile(user, UserProfileUpdateSchema(full_name=None)))
 
 
 def test_deactivate_user_account() -> None:
     user = active_user()
     session = AsyncMock(spec=AsyncSession)
+    service = UserService(session=session)
 
-    asyncio.run(deactivate_user_account(session, user))
+    asyncio.run(service.deactivate_account(user))
 
     assert user.is_active is False
     session.commit.assert_awaited_once()
@@ -69,7 +66,8 @@ def test_deactivate_user_account() -> None:
 def test_deactivate_user_account_maps_database_failure() -> None:
     user = active_user()
     session = AsyncMock(spec=AsyncSession)
+    service = UserService(session=session)
     session.commit.side_effect = SQLAlchemyError("database unavailable")
 
     with pytest.raises(AccountDeactivationUnavailableError):
-        asyncio.run(deactivate_user_account(session, user))
+        asyncio.run(service.deactivate_account(user))

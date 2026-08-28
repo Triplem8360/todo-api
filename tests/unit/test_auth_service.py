@@ -17,7 +17,7 @@ from todo_api.core.security import (
 from todo_api.exceptions.auth import RefreshTokenReuseDetectedError
 from todo_api.models.refresh_session import RefreshSession
 from todo_api.models.user import User
-from todo_api.services.auth import refresh_login_session
+from todo_api.services.auth import AuthService
 
 
 def test_refresh_token_rotates_the_session(settings: Settings) -> None:
@@ -28,6 +28,7 @@ def test_refresh_token_rotates_the_session(settings: Settings) -> None:
         user_id=7,
         token_hash=hash_secret(original.refresh_token),
         expires_at=datetime.now(UTC) + timedelta(days=1),
+        absolute_expires_at=datetime.now(UTC) + timedelta(days=30),
     )
     user = User(
         id=7,
@@ -39,8 +40,9 @@ def test_refresh_token_rotates_the_session(settings: Settings) -> None:
     database_session = AsyncMock(spec=AsyncSession)
     database_session.scalar.return_value = record
     database_session.get.return_value = user
+    service = AuthService(session=database_session, settings=settings)
 
-    rotated = asyncio.run(refresh_login_session(database_session, original.refresh_token, settings))
+    rotated = asyncio.run(service.refresh_login_session(original.refresh_token))
 
     access_payload = decode_access_token(rotated.access_token, settings)
     refresh_payload = decode_refresh_token(rotated.refresh_token, settings)
@@ -60,12 +62,14 @@ def test_refresh_token_reuse_revokes_session(settings: Settings) -> None:
         user_id=7,
         token_hash=hash_secret("a newer refresh token"),
         expires_at=datetime.now(UTC) + timedelta(days=1),
+        absolute_expires_at=datetime.now(UTC) + timedelta(days=30),
     )
     database_session = AsyncMock(spec=AsyncSession)
     database_session.scalar.return_value = record
+    service = AuthService(session=database_session, settings=settings)
 
     with pytest.raises(RefreshTokenReuseDetectedError):
-        asyncio.run(refresh_login_session(database_session, token, settings))
+        asyncio.run(service.refresh_login_session(token))
 
     assert record.revoked_at is not None
     database_session.commit.assert_awaited_once()

@@ -9,6 +9,10 @@ from pydantic import ValidationError
 from todo_api.core.config import Settings
 
 TEST_SECRET = "test-secret-key-with-at-least-thirty-two-bytes"
+COMPOSE_ONLY_ENV_KEYS = {
+    "CELERY_MAINTENANCE_WORKER_CONCURRENCY",
+    "CELERY_WORKER_CONCURRENCY",
+}
 
 
 def test_env_example_matches_settings_validation_aliases() -> None:
@@ -20,7 +24,7 @@ def test_env_example_matches_settings_validation_aliases() -> None:
     }
     validation_aliases = {str(field.validation_alias) for field in Settings.model_fields.values()}
 
-    assert env_keys == validation_aliases
+    assert env_keys == validation_aliases | COMPOSE_ONLY_ENV_KEYS
 
 
 def test_env_example_values_are_valid_settings() -> None:
