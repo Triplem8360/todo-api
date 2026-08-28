@@ -14,8 +14,8 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: Build and deploy to staging
+  build:
+    name: Build and push staging image
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -27,8 +27,6 @@ jobs:
     env:
       IMAGE_NAME: ${{ vars.DARKUBE_IMAGE_NAME }}
       DOCKER_AUTH_CONFIG: ${{ secrets.DOCKER_AUTH_CONFIG }}
-      APP_ID: ${{ secrets.DARKUBE_APP_ID }}
-      DEPLOY_TOKEN: ${{ secrets.DARKUBE_DEPLOY_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -36,12 +34,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check staging configuration
+      - name: Check build configuration
         run: |
           test -n "$IMAGE_NAME"
           test -n "$DOCKER_AUTH_CONFIG"
-          test -n "$APP_ID"
-          test -n "$DEPLOY_TOKEN"
 
       - name: Build and push staging image
         run: >-
@@ -52,6 +48,26 @@ jobs:
           --workdir .
           --file ./Dockerfile
           --build-context .
+
+  deploy:
+    name: Deploy staging image
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: staging
+    container:
+      image: hamravesh/darkube-cli:v1.1
+      options: --user root
+    env:
+      APP_ID: ${{ secrets.DARKUBE_APP_ID }}
+      DEPLOY_TOKEN: ${{ secrets.DARKUBE_DEPLOY_TOKEN }}
+
+    steps:
+      - name: Check deployment configuration
+        run: |
+          test -n "$APP_ID"
+          test -n "$DEPLOY_TOKEN"
 
       - name: Deploy staging image
         run: >-

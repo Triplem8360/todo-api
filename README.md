@@ -118,9 +118,10 @@ GitHub Actions uses descriptive workflow filenames under `.github/workflows`:
 * `production-ci.yml` validates the production Compose configuration, then builds and smoke-tests
   the production `Dockerfile` as a non-root user. It runs for version tags matching `v*.*.*` and
   manual dispatches.
-* `darkube-deployment.yml` replaces the generic `main.yml` name. On every push to `main`, it uses
-  the production `Dockerfile` to build and push `main` and seven-character commit tags, then
-  deploys the commit tag to the protected `staging` GitHub environment through Darkube.
+* `darkube-deployment.yml` replaces the generic `main.yml` name. On every push to `main`, its
+  separate `build` job uses the production `Dockerfile` to push `main` and seven-character commit
+  tags. The dependent `deploy` job then deploys that exact commit tag to the protected `staging`
+  GitHub environment through Darkube.
 
 The workflow filename is not part of GitHub Actions execution semantics, so renaming `main.yml`
 does not change its triggers. Update any README badge or external link that points to the old path.
@@ -128,7 +129,9 @@ The `staging` GitHub environment must define the `DARKUBE_IMAGE_NAME` variable a
 `DOCKER_AUTH_CONFIG`, `DARKUBE_APP_ID`, and `DARKUBE_DEPLOY_TOKEN` secrets. Restrict that
 environment to the protected `main` branch. The application deployed in Darkube should use
 `APP_ENV=staging`, secure cookies, and staging-specific database, Redis, mail, OAuth, and signing
-secrets.
+secrets. Configure application runtime values such as `DATABASE_URL` and `REDIS_URL` in Darkube;
+they are injected into the running container and do not require copying `.env.example` to `.env`
+during the image build. The production image intentionally does not contain a `.env` file.
 
 ## Authentication and OAuth
 
